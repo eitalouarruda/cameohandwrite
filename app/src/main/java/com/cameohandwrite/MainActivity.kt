@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
@@ -19,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -49,6 +52,8 @@ class MainActivity:ComponentActivity() {
     val simulation by vm.simulator.state.collectAsStateWithLifecycle()
     val s=state.settings
     val context=LocalContext.current
+    val focus=LocalFocusManager.current
+    val keyboard=LocalSoftwareKeyboardController.current
     val scope=rememberCoroutineScope()
     var tab by remember {mutableIntStateOf(0)}
     var selectedPage by remember {mutableIntStateOf(0)}
@@ -72,11 +77,12 @@ class MainActivity:ComponentActivity() {
         connectAfterPermission=address
         permissions.launch(if(Build.VERSION.SDK_INT>=31) arrayOf(Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.BLUETOOTH_CONNECT) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
     }
+    BackHandler(enabled=ble.testing) {vm.message("Use Cancelar envio antes de sair da escrita")}
     LaunchedEffect(ready,state.connecting,state.busy,devicesOpen,pendingPage,awaitingConnection) {
         if(awaitingConnection && ready && !state.connecting && !state.busy && devicesOpen) {
             devicesOpen=false;awaitingConnection=false
             val target=pendingPage;pendingPage=null
-            if(target!=null) vm.printPage(target)
+            if(target!=null) {focus.clearFocus();keyboard?.hide();vm.printPage(target)}
         }
     }
     DisposableEffect(ble.testing) {
@@ -121,7 +127,7 @@ class MainActivity:ComponentActivity() {
                     Text("Cameo Handwrite",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
                     Text("${BuildConfig.VERSION_NAME} · ${if(s.style==Style.MESSY) "Feia" else s.style.label} · ${s.quality.label}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)
                 }
-                TextButton(onClick={pendingPage=null;devicesOpen=true;search(if(!ready) s.preferredDevice.takeIf {it.isNotBlank()} else null)},enabled=!ble.testing && !state.connecting) {Text(if(state.connecting) "Conectando…" else if(ready) "Conectada" else "Conectar")}
+                TextButton(onClick={focus.clearFocus();keyboard?.hide();pendingPage=null;devicesOpen=true;search(if(!ready) s.preferredDevice.takeIf {it.isNotBlank()} else null)},enabled=!ble.testing && !state.connecting) {Text(if(state.connecting) "Conectando…" else if(ready) "Conectada" else "Conectar")}
             }
             if(state.busy || state.connecting) LinearProgressIndicator(Modifier.fillMaxWidth())
             Column(Modifier.weight(1f).verticalScroll(remember(tab) {ScrollState(0)}).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -146,16 +152,7 @@ class MainActivity:ComponentActivity() {
                             OutlinedButton(onClick={selectedPage=page+1},enabled=page<state.document.pages.lastIndex && !ble.testing) {Text("Próxima")}
                         }
                         if(current!=null) PaperPreview(current,s.paper,Modifier.fillMaxWidth().height(390.dp).testTag("pagePreview"))
-                        if(ble.printMessage.isNotBlank()) Text(ble.printMessage,color=MaterialTheme.colorScheme.primary)
-                        if(ble.printingPage) {
-                            Text("Página ${ble.pageNumber} · ${ble.suiteDone} / ${ble.suiteTotal} traços")
-                            LinearProgressIndicator(progress={if(ble.suiteTotal>0) ble.suiteDone.toFloat()/ble.suiteTotal else 0f},modifier=Modifier.fillMaxWidth())
-                            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                                OutlinedButton(onClick=vm.ble::pauseSuite) {Text(if(ble.suitePaused) "Retomar" else "Pausar")}
-                                OutlinedButton(onClick=vm.ble::stopMotionTest) {Text("Cancelar envio")}
-                            }
-                            Text("A pausa ou o cancelamento aguarda o bloco atual. Deixe o app aberto durante a escrita.",style=MaterialTheme.typography.bodySmall)
-                        }
+
                     }
                     1 -> {
                         SectionTitle("Sua folha")
@@ -215,11 +212,23 @@ class MainActivity:ComponentActivity() {
                 if(state.message.isNotBlank()) Text(state.message,style=MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(12.dp))
             }
-            if(tab==0 && !ble.printingPage) Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp)) {
-                Text("Folha carregada como na prévia; caneta no suporte 1 e sem lâminas.",style=MaterialTheme.typography.bodySmall)
-                Button(onClick={
-                    if(ready) vm.printPage(page) else {pendingPage=page;devicesOpen=true;search(s.preferredDevice.takeIf {it.isNotBlank()})}
-                },enabled=s.text.isNotBlank() && current?.strokes?.isNotEmpty()==true && !state.busy && state.error==null && !ble.testing && !state.connecting,modifier=Modifier.fillMaxWidth().testTag("printPage")) {Text(if(ble.completedPage==page+1) "Escrever novamente a página ${page+1}" else "Escrever página ${page+1}")}
+            if(tab==0) Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                if(ble.printMessage.isNotBlank()) Text(ble.printMessage,color=MaterialTheme.colorScheme.primary)
+                if(ble.printingPage) {
+                    Text("Página ${ble.pageNumber} · ${ble.suiteDone} / ${ble.suiteTotal} traços")
+                    LinearProgressIndicator(progress={if(ble.suiteTotal>0) ble.suiteDone.toFloat()/ble.suiteTotal else 0f},modifier=Modifier.fillMaxWidth())
+                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(onClick=vm.ble::pauseSuite) {Text(if(ble.suitePaused) "Retomar" else "Pausar")}
+                        OutlinedButton(onClick=vm.ble::stopMotionTest) {Text("Cancelar envio")}
+                    }
+                    Text("Pausa/cancelamento aguarda o bloco atual. Deixe o app aberto.",style=MaterialTheme.typography.bodySmall)
+                } else {
+                    Text("Folha carregada como na prévia; caneta no suporte 1 e sem lâminas.",style=MaterialTheme.typography.bodySmall)
+                    Button(onClick={
+                        focus.clearFocus();keyboard?.hide()
+                        if(ready) vm.printPage(page) else {pendingPage=page;devicesOpen=true;search(s.preferredDevice.takeIf {it.isNotBlank()})}
+                    },enabled=s.text.isNotBlank() && current?.strokes?.isNotEmpty()==true && !state.busy && state.error==null && !ble.testing && !state.connecting,modifier=Modifier.fillMaxWidth().testTag("printPage")) {Text(if(ble.completedPage==page+1) "Escrever novamente a página ${page+1}" else "Escrever página ${page+1}")}
+                }
             }
             TabRow(selectedTabIndex=tab) {listOf("Texto","Folha","Ajustes").forEachIndexed {index,label->Tab(selected=tab==index,onClick={tab=index},enabled=!ble.testing && !state.connecting,text={Text(label)})}}
         }

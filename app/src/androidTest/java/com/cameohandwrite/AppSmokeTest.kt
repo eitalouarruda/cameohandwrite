@@ -26,6 +26,10 @@ class AppSmokeTest {
         compose.waitUntil(15000) {compose.onAllNodes(hasTestTag("printPage") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("printPage").assertIsEnabled()
         compose.onNodeWithTag("pagePreview").assertExists()
+        compose.runOnIdle {
+            compose.activity.getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(compose.activity.window.decorView.windowToken,0)
+        }
+        compose.waitForIdle()
         savePreview("01-editor.png")
         compose.onNodeWithTag("pagePreview").performScrollTo()
         savePreview("02-page-preview.png")
