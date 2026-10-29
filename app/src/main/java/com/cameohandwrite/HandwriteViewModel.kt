@@ -73,7 +73,7 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
             delay(300)
         }
     } }
-    fun suitePreview():HardwareSuite=CameoTestSuite.build(mutable.value.settings.paper,fontEngine)
+    fun suitePreview(paper:Paper=mutable.value.settings.paper):HardwareSuite=CameoTestSuite.build(paper,fontEngine)
     fun runHardwareSuite(setup:PenSetup) { viewModelScope.launch {
         try { ble.runSuite(suitePreview(),setup) } catch(e:CancellationException) { throw e } catch(e:Exception) { message("Bateria interrompida: ${e.message}") }
     } }

@@ -18,7 +18,7 @@ import com.cameohandwrite.ui.PaperPreview
     onRun:(PenSetup)->Unit,onPause:()->Unit,onStop:()->Unit,onExport:()->Unit,onCopy:()->Unit,
     onReport:((HardwareTestReport)->HardwareTestReport)->Unit,onCalibrate:()->Unit
 ) {
-    var prepared by remember(state.model,state.connected,state.suiteRunning) { mutableStateOf(false) }
+    var prepared by remember(state.model,state.connected,state.suiteRunning,suite?.paper) { mutableStateOf(false) }
     var force by remember { mutableIntStateOf(5) };var speed by remember { mutableIntStateOf(5) }
     val recognized=state.connected && Cameo5Driver.identifiesOriginalCameo5(state.model)
     val idle=!state.testing && !state.identifying && !state.queryingStatus

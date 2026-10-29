@@ -176,7 +176,8 @@ class MainActivity:ComponentActivity() {
                             OutlinedButton(onClick=vm::queryDeviceStatus,enabled=ble.model.isNotBlank() && !ble.identifying && !ble.queryingStatus && !ble.testing) {Text("Consultar estado")}
                             if(ble.deviceStatus.isNotBlank()) Text("Estado: ${ble.deviceStatus}")
                         }
-                        val testPreview=remember(s.paper) { runCatching { vm.suitePreview() } }
+                        val suitePaper=if(ble.suiteRunning) hardwareReport?.paper ?: s.paper else s.paper
+                        val testPreview=remember(suitePaper) { runCatching { vm.suitePreview(suitePaper) } }
                         HardwareSuiteControls(ble,testPreview.getOrNull(),testPreview.exceptionOrNull()?.message,hardwareReport,vm::runHardwareSuite,vm.ble::pauseSuite,vm.ble::stopMotionTest,
                             onExport={exportHardwareReport.launch("cameo-bateria-completa.json")},
                             onCopy={ val clipboard=context.getSystemService(android.content.ClipboardManager::class.java);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Resultado Cameo",vm.hardwareReportSummary()));vm.message("Resumo copiado; cole na conversa se preferir") },
