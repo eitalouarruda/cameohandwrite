@@ -2,7 +2,7 @@
 
 Aplicativo Android 10+ em Kotlin/Compose para preparar escrita de traço único em folhas pautadas. Interface em português, offline, sem conta, backend ou permissão de internet.
 
-**Status:** editor, layout, prévia, SVG, calibração, simulador e diagnóstico BLE/USB implementados. **A escrita física pela Cameo 5 está bloqueada nesta versão.** Não foi disponibilizada uma Cameo para validar origem, caneta, fluxo e cancelamento. Instalar o APK não implica suporte físico validado.
+**Status:** editor, layout, prévia, SVG, calibração, simulador e diagnóstico BLE/USB implementados. **A escrita de texto pela Cameo 5 está bloqueada nesta versão; há um teste experimental de movimento sem ferramenta.** O diagnóstico enviado pelo usuário confirmou handshake e identificação `CAMEO 5 V1.04` por BLE. Origem, caneta, execução de movimentos e cancelamento físico ainda precisam ser testados. Instalar o APK não implica suporte físico validado.
 
 ## Instalar
 
@@ -42,9 +42,21 @@ Licenças e créditos em [licenses](licenses/), incluídos também no APK. A not
 - Driver de serialização GPGL: Y,X em 20 unidades/mm, M/D, ETX, limites físicos e blocos de até 1024 bytes preservando comandos. Separado do layout e dos diagnósticos.
 - Contrato `PlotterTransport` e transporte gravador para verificação offline.
 
-Não implementados/liberados: transmissão física de trabalhos BLE/USB, configuração de ferramenta/pressão, controle físico de velocidades, pausa/cancelamento da Cameo, pareamento forçado ou reconexão/retomada automática de trabalho. Uma desconexão não prova que o equipamento parou; jamais reenviar automaticamente um trabalho parcial.
+Não implementados/liberados: transmissão física de trabalhos de texto BLE/USB, configuração de ferramenta/pressão, controle físico de velocidades, pausa/cancelamento da Cameo, pareamento forçado ou reconexão/retomada automática de trabalho. Uma desconexão não prova que o equipamento parou; jamais reenviar automaticamente um trabalho parcial.
 
 [Pesquisa e fontes fixadas do protocolo](docs/PROTOCOL.md). O upstream relata teste com Cameo **5 Alpha**; não foi tratado como teste da Cameo 5 original nem deste APK. A ausência de acesso ao equipamento não impede testar todo o fluxo offline.
+
+## Teste mínimo de movimento (0.2.0)
+
+1. Retire caneta e lâminas dos dois suportes; carregue a base na máquina ociosa. Recarregue se a origem tiver sido alterada.
+2. Em **Escrita**, conecte à Cameo 5 e use **Inicializar diagnóstico e consultar modelo**.
+3. Use **Consultar estado da Cameo**; o teste só é liberado com estado **Pronta**.
+4. Confirme os três itens sobre ferramentas, base e origem. Use **Testar movimento de 1 mm sem ferramenta**.
+5. Observe o carro e exporte o diagnóstico BLE, informando se houve movimento real.
+
+Comandos fixos `M20,20`, `M20,40`, `M20,20`, terminados em ETX, na ordem Y,X a 20 unidades/mm: pontos absolutos (1,1) → (2,1) → (1,1) mm em relação à origem carregada. Não são deslocamentos relativos à posição atual, e o limite de 2 mm nas coordenadas não garante deslocamento inicial pequeno se a origem/carro estiverem em outra posição. Sem comandos D, força, velocidade ou seleção de ferramenta. Um comando por vez, com consulta de estado antes/depois e timeout; sem repetição automática. Recusa modelo diferente, base descarregada, ocupado ou estado desconhecido.
+
+**Interromper próximas etapas** apenas impede novos movimentos; não aborta um comando já aceito e não envia retorno automático. Em falha/timeout a sessão é encerrada. Para repetir, desconecte e identifique novamente após conferir a base. O estado pronto e confirmações GATT não comprovam que o carro se moveu: essa confirmação depende de observação física. Escrita com caneta e textos inteiros continuam bloqueados.
 
 ## Arquitetura e build
 

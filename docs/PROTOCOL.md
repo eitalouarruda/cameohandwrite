@@ -48,3 +48,10 @@ Fontes: [Graphtec.py](https://github.com/fablabnbg/inkscape-silhouette/blob/f376
 6. Executar marca pequena em folha de descarte; medir e salvar calibração antes de texto longo.
 
 Até esses testes, descoberta BLE/USB, logs, serialização GPGL, SVG e simulador são recursos de software; não representam certificação de impressão na Cameo 5. Não enviar configurações de lâmina, pressão ou aceleração por suposição. Origem nominal e dimensões do papel não substituem medição do carregamento real.
+
+
+## Evidência obtida com o usuário
+
+O diagnóstico local enviado pelo usuário identificou os quatro UUIDs documentados e resposta real `CAMEO 5 V1.04` após handshake e `FG`. O endereço BLE não é incorporado ao código nem publicado. Isso comprova comunicação de diagnóstico com uma Cameo 5 original; não comprova movimento ou escrita.
+
+A versão 0.2.0 adiciona consulta `ESC ENQ` e teste opt-in de três movimentos absolutos M, limitado aos pontos (1,1), (2,1), (1,1) mm. Sem caneta/lâmina, sem D nem configuração de ferramenta. Uma resposta desconhecida, timeout ou desconexão impede próximos movimentos; não há retomada automática. A posição física inicial/origem requer conferência pelo usuário, e a observação de movimento real continua pendente.

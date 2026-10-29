@@ -1,6 +1,9 @@
 package com.cameohandwrite
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -19,13 +22,13 @@ class MotionProbeUiTest {
     @Test fun requiresIdentificationReadyStatusAndEveryChecklistItem() {
         val state=mutableStateOf(BleDiagnostics.State())
         var tests=0
-        compose.setContent { MaterialTheme { MotionProbeControls(state.value,{}, {tests++},{}) } }
+        compose.setContent { MaterialTheme { Column(androidx.compose.ui.Modifier.verticalScroll(rememberScrollState())) { MotionProbeControls(state.value,{}, {tests++},{}) } } }
         compose.onNodeWithText(button).assertIsNotEnabled()
         compose.runOnIdle { state.value=state.value.copy(connected=true,model="CAMEO 5 V1.04") }
-        compose.onAllNodes(isToggleable()).apply { for(i in 0..2) get(i).performClick() }
+        compose.onAllNodes(isToggleable()).apply { for(i in 0..2) get(i).performScrollTo().performClick() }
         compose.onNodeWithText(button).assertIsNotEnabled()
         compose.runOnIdle { state.value=state.value.copy(readyForProbe=true) }
-        compose.onNodeWithText(button).assertIsEnabled().performClick()
+        compose.onNodeWithText(button).performScrollTo().assertIsEnabled().performClick()
         compose.runOnIdle { assertEquals(1,tests);state.value=state.value.copy(testAttempted=true,testing=true) }
         compose.onNodeWithText(button).assertIsNotEnabled()
         compose.onNodeWithText("Interromper próximas etapas").assertExists()

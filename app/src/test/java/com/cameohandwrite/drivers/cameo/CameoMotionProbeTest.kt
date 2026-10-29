@@ -37,9 +37,7 @@ class CameoMotionProbeTest {
         }
     }
     @Test fun waitsThroughMovingStatusBeforeNextCommand() = runBlocking {
-        val link=FakeLink();var polls=0
-        link.onStatus={ if(link.sent.isNotEmpty() && polls++%2==0) Cameo5Driver.Status.MOVING else Cameo5Driver.Status.READY }
-        // Explicit sequence avoids reporting busy on a pre-move recheck.
+        val link=FakeLink()
         val states=ArrayDeque(listOf(Cameo5Driver.Status.READY,Cameo5Driver.Status.READY,Cameo5Driver.Status.MOVING,Cameo5Driver.Status.READY,Cameo5Driver.Status.READY,Cameo5Driver.Status.READY,Cameo5Driver.Status.READY,Cameo5Driver.Status.READY))
         link.onStatus={states.removeFirst()}
         assertTrue(CameoMotionProbe.run(model,link,pollMillis=1));assertEquals(3,link.sent.size);assertTrue(states.isEmpty())
