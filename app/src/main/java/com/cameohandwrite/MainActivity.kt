@@ -30,6 +30,7 @@ import com.cameohandwrite.domain.*
 import com.cameohandwrite.data.usb.UsbDiagnostics
 import com.cameohandwrite.ui.PaperPreview
 import com.cameohandwrite.ui.plotter.MotionProbeControls
+import com.cameohandwrite.ui.plotter.HardwareSuiteControls
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -45,6 +46,7 @@ class MainActivity:ComponentActivity() {
     val state by vm.state.collectAsStateWithLifecycle()
     val simulation by vm.simulator.state.collectAsStateWithLifecycle()
     val ble by vm.ble.state.collectAsStateWithLifecycle()
+    val hardwareReport by vm.ble.report.collectAsStateWithLifecycle()
     val s=state.settings
     var tab by remember { mutableIntStateOf(0) }
     var page by remember { mutableIntStateOf(0) }
@@ -64,6 +66,13 @@ class MainActivity:ComponentActivity() {
             withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(PlotPlanner.svg(test,s.paper)) } }
             vm.message("Teste de alinhamento exportado; execute com um fluxo físico já validado")
         } catch(e:Exception) { vm.message("Teste inválido: ${e.message}") } }
+    }
+    val exportHardwareReport=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if(uri!=null) scope.launch { try {
+            val data=vm.exportHardwareReport()
+            withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(data) } }
+            vm.message("Relatório único exportado com todas as etapas e observações")
+        } catch(e:Exception) { vm.message("Falha ao exportar relatório: ${e.message}") } }
     }
     val exportConfig=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if(uri!=null) scope.launch { try { val data=vm.exportSettings();withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(data) } };vm.message("Configurações exportadas") } catch(e:Exception) { vm.message("Falha: ${e.message}") } }
@@ -154,7 +163,7 @@ class MainActivity:ComponentActivity() {
                         if(simulation.total>0) PaperPreview(Page(vm.simulator.recorded.toList(),0),s.paper,Modifier.fillMaxWidth().height(300.dp))
                         HorizontalDivider()
                         SectionTitle("Cameo 5 · diagnóstico BLE")
-                        Text("A escrita de texto continua bloqueada. Esta versão permite consultar estado e executar um teste mínimo de movimento sem ferramenta após identificar a Cameo 5.")
+                        Text("Movimento sem ferramenta já foi observado na Cameo 5 V1.04. Agora você pode testar cinco padrões com caneta em uma execução. Escrita de documentos completos continua bloqueada.")
                         Text("Preferido: ${s.preferredDevice.ifEmpty { "nenhum" }}",style=MaterialTheme.typography.bodySmall)
                         Button(onClick={
                             permissions.launch(if(Build.VERSION.SDK_INT>=31) arrayOf(Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.BLUETOOTH_CONNECT) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
@@ -164,8 +173,17 @@ class MainActivity:ComponentActivity() {
                             Text("Identificação opcional: use somente com a máquina ociosa. O handshake reinicia o estado do protocolo (ESC EOT); não envia movimentos.",style=MaterialTheme.typography.bodySmall)
                             OutlinedButton(onClick=vm::identifyDevice,enabled=!ble.identifying && !ble.queryingStatus && !ble.testing) { Text(if(ble.identifying) "Consultando…" else "Inicializar diagnóstico e consultar modelo") }
                             if(ble.model.isNotBlank()) Text("Resposta FG: ${ble.model}")
+                            OutlinedButton(onClick=vm::queryDeviceStatus,enabled=ble.model.isNotBlank() && !ble.identifying && !ble.queryingStatus && !ble.testing) {Text("Consultar estado")}
+                            if(ble.deviceStatus.isNotBlank()) Text("Estado: ${ble.deviceStatus}")
                         }
-                        MotionProbeControls(ble,vm::queryDeviceStatus,vm::testDeviceMotion,vm.ble::stopMotionTest)
+                        val testPreview=remember(s.paper) { runCatching { vm.suitePreview() } }
+                        HardwareSuiteControls(ble,testPreview.getOrNull(),testPreview.exceptionOrNull()?.message,hardwareReport,vm::runHardwareSuite,vm.ble::pauseSuite,vm.ble::stopMotionTest,
+                            onExport={exportHardwareReport.launch("cameo-bateria-completa.json")},
+                            onCopy={ val clipboard=context.getSystemService(android.content.ClipboardManager::class.java);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Resultado Cameo",vm.hardwareReportSummary()));vm.message("Resumo copiado; cole na conversa se preferir") },
+                            onReport=vm.ble::editReport,onCalibrate=vm::applySuiteCalibration)
+                        var showMotion by remember { mutableStateOf(false) }
+                        OutlinedButton(onClick={showMotion=!showMotion},enabled=!ble.testing) { Text(if(showMotion) "Ocultar teste sem ferramenta" else "Mostrar teste anterior sem ferramenta") }
+                        if(showMotion) MotionProbeControls(ble,vm::queryDeviceStatus,vm::testDeviceMotion,vm.ble::stopMotionTest)
                         if(ble.connected) OutlinedButton(onClick=vm.ble::disconnect,enabled=!ble.testing && !ble.identifying && !ble.queryingStatus) { Text("Desconectar GATT") }
                         Text(ble.log,style=MaterialTheme.typography.bodySmall)
                         OutlinedButton(onClick={exportLogs.launch("cameo-diagnostico-ble.txt")}) { Text("Exportar diagnóstico BLE") }

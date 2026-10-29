@@ -14,15 +14,24 @@ import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 import com.cameohandwrite.drivers.cameo.Cameo5Driver
 import com.cameohandwrite.drivers.cameo.CameoMotionProbe
+import com.cameohandwrite.drivers.cameo.*
+import com.cameohandwrite.data.HardwareTestReport
+import java.time.Instant
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /** Explicit diagnostic handshake and fixed pen-up probe; discovery alone never sends commands. */
 class BleDiagnostics(private val context:Context) {
     data class Device(val name:String,val address:String,val rssi:Int)
-    data class State(val scanning:Boolean=false,val connected:Boolean=false,val devices:List<Device> = emptyList(),val log:String="Nenhum comando enviado",val knownService:Boolean=false,val identifying:Boolean=false,val model:String="",val testing:Boolean=false,val queryingStatus:Boolean=false,val testSteps:Int=0,val testAttempted:Boolean=false,val deviceStatus:String="",val testMessage:String="",val readyForProbe:Boolean=false)
+    data class State(val scanning:Boolean=false,val connected:Boolean=false,val devices:List<Device> = emptyList(),val log:String="Nenhum comando enviado",val knownService:Boolean=false,val identifying:Boolean=false,val model:String="",val testing:Boolean=false,val queryingStatus:Boolean=false,val testSteps:Int=0,val testAttempted:Boolean=false,val deviceStatus:String="",val testMessage:String="",val readyForProbe:Boolean=false,val suiteRunning:Boolean=false,val suitePaused:Boolean=false,val suiteStage:String="",val suiteDone:Int=0,val suiteTotal:Int=0)
     private val mutable=MutableStateFlow(State())
     val state=mutable.asStateFlow()
+    private val reportMutable=MutableStateFlow<HardwareTestReport?>(null)
+    val report=reportMutable.asStateFlow()
+    @Volatile private var recordingSuite=false
+    fun restoreReport(report:HardwareTestReport?) { if(reportMutable.value==null) reportMutable.value=report }
+    fun editReport(change:(HardwareTestReport)->HardwareTestReport) { if(!mutable.value.suiteRunning) reportMutable.update { it?.let(change) } }
     private val manager=context.getSystemService(BluetoothManager::class.java)
     private val handler=Handler(Looper.getMainLooper())
     @Volatile private var gatt:BluetoothGatt?=null
@@ -144,6 +153,42 @@ class BleDiagnostics(private val context:Context) {
             throw e
         } finally { mutable.value=mutable.value.copy(testing=false) }
     }
+    suspend fun runSuite(suite:HardwareSuite,setup:PenSetup) = operationLock.withLock {
+        val (g,c)=identifiedConnection()
+        CameoTestSuite.validate(suite);setup.commands()
+        stopProbe=false
+        reportMutable.value=HardwareTestReport.start(mutable.value.model,suite,setup)
+        mutable.value=mutable.value.copy(testing=true,suiteRunning=true,suitePaused=false,suiteDone=0,suiteTotal=suite.stages.sumOf { it.page.strokes.size },suiteStage="Preparando",readyForProbe=false)
+        recordingSuite=true
+        log("BATERIA DE CANETA: suporte 1, força ${setup.force}, velocidade ${setup.speed} (escala GPGL); perfil ${suite.paper.name}")
+        try {
+            val complete=CameoTestSuite.run(mutable.value.model,suite,setup,object:CameoMotionProbe.Link {
+                override suspend fun status()=readStatus(g,c)
+                override suspend fun write(command:ByteArray) {
+                    check(g===gatt && mutable.value.connected && g===identifiedGatt) { "Conexão alterada; sem repetição de comandos" }
+                    writeConfirmed(g,c,command)
+                }
+            },stop={stopProbe},paused={mutable.value.suitePaused},onStage={index,title ->
+                mutable.value=mutable.value.copy(suiteStage=title)
+                if(index>=0) reportMutable.update { r -> r?.copy(stages=r.stages.mapIndexed { i,s -> if(i==index) s.copy(execution=if(title.contains("envio concluído")) "Envio concluído; observação pendente" else "Em execução") else s }) }
+                log("ETAPA: $title")
+            },onStroke={done,total -> mutable.value=mutable.value.copy(suiteDone=done,suiteTotal=total) })
+            val outcome=if(complete) "Envio concluído; avaliação física pendente" else "Interrompido pelo operador; próximos traços não enviados"
+            reportMutable.update { r -> r?.copy(outcome=outcome,stages=r.stages.map { if(it.execution=="Em execução") it.copy(execution="Parcial; interrompido") else it }) }
+            log(outcome)
+        } catch(e:Exception) {
+            reportMutable.update { r -> r?.copy(outcome="Falha: ${e.message}; não há retomada automática",stages=r.stages.map { if(it.execution=="Em execução") it.copy(execution="Falha/parcial; verificar fisicamente") else it }) }
+            log("Falha: ${e.message}. A caneta pode permanecer baixada; confira a máquina antes de retirar a folha.")
+            disconnect();throw e
+        } finally {
+            recordingSuite=false
+            mutable.value=mutable.value.copy(testing=false,suiteRunning=false,suitePaused=false)
+        }
+    }
+    fun pauseSuite() { if(mutable.value.suiteRunning) {
+        mutable.value=mutable.value.copy(suitePaused=!mutable.value.suitePaused)
+        log(if(mutable.value.suitePaused) "Pausa solicitada após levantar a caneta no traço atual" else "Bateria retomada")
+    } }
     fun stopMotionTest() {
         stopProbe=true
         log("Solicitada interrupção das próximas etapas; isso não aborta o comando já recebido pela Cameo")
@@ -161,7 +206,11 @@ class BleDiagnostics(private val context:Context) {
         log("TX ${c.uuid}: "+bytes.joinToString(" ") { "%02x".format(it.toInt() and 255) })
     }
     private val stop=Runnable { stopScan() }
-    private fun log(message:String) { synchronized(this) { mutable.value=mutable.value.copy(log=(mutable.value.log+"\n"+message).takeLast(16000)) } }
+    private fun log(message:String) { synchronized(this) {
+        val line=Instant.now().toString()+" "+message
+        mutable.value=mutable.value.copy(log=(mutable.value.log+"\n"+line).takeLast(16000))
+        if(recordingSuite) reportMutable.update { r -> r?.copy(events=(r.events+line).takeLast(20000)) }
+    } }
     private val callback=object:ScanCallback() {
         override fun onScanResult(callbackType:Int,result:ScanResult) {
             val device=Device(result.scanRecord?.deviceName ?: result.device.name ?: "BLE sem nome",result.device.address,result.rssi)

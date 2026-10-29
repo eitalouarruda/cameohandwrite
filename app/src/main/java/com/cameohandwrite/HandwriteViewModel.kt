@@ -4,6 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.cameohandwrite.data.SettingsRepository
+import com.cameohandwrite.data.HardwareReportStore
+import com.cameohandwrite.data.HardwareTestReport
+import com.cameohandwrite.drivers.cameo.*
+import kotlinx.coroutines.flow.filterNotNull
 import com.cameohandwrite.data.bluetooth.BleDiagnostics
 import com.cameohandwrite.domain.*
 import com.cameohandwrite.simulator.PlotterSimulator
@@ -61,6 +65,44 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
     fun testDeviceMotion() { viewModelScope.launch {
         try { ble.testMotion() } catch(e:CancellationException) { throw e } catch(e:Exception) { message("Teste de movimento interrompido: ${e.message}") }
     } }
+    private val reportStore=HardwareReportStore(app)
+    init { viewModelScope.launch {
+        try { ble.restoreReport(withContext(Dispatchers.IO) { reportStore.load() }) } catch(e:Exception) { message("Relatório anterior não carregado: ${e.message}") }
+        ble.report.filterNotNull().collect { report ->
+            try { withContext(Dispatchers.IO) { reportStore.save(report) } } catch(e:Exception) { message("Relatório não salvo: ${e.message}") }
+            delay(300)
+        }
+    } }
+    fun suitePreview():HardwareSuite=CameoTestSuite.build(mutable.value.settings.paper,fontEngine)
+    fun runHardwareSuite(setup:PenSetup) { viewModelScope.launch {
+        try { ble.runSuite(suitePreview(),setup) } catch(e:CancellationException) { throw e } catch(e:Exception) { message("Bateria interrompida: ${e.message}") }
+    } }
+    fun exportHardwareReport()=ble.report.value?.encode() ?: error("Execute uma bateria primeiro")
+    fun hardwareReportSummary():String {
+        val r=ble.report.value ?: return "Nenhuma bateria executada"
+        return buildString {
+            appendLine("Cameo Handwrite · ${r.model.trim()} · ${r.startedAt}")
+            appendLine(r.outcome)
+            appendLine("Força ${r.setup.force}; velocidade ${r.setup.speed} (escala GPGL)")
+            r.stages.forEach { appendLine("${it.title}: ${it.execution}; observação: ${it.observation}") }
+            appendLine("Quadrado: largura=${r.squareWidth} mm; altura=${r.squareHeight} mm")
+            appendLine("Erro medido: X=${r.errorX} mm; Y=${r.errorY} mm")
+            appendLine("Notas: ${r.notes}")
+        }
+    }
+    fun applySuiteCalibration() {
+        val r=ble.report.value ?: return
+        try {
+            require(!ble.state.value.suiteRunning)
+            val x=r.errorX.replace(',','.').toDoubleOrNull() ?: error("Informe o erro X medido")
+            val y=r.errorY.replace(',','.').toDoubleOrNull() ?: error("Informe o erro Y medido")
+            require(x.isFinite() && y.isFinite())
+            val paper=r.paper.copy(offsetX=kotlin.math.round((r.paper.offsetX-x)*10)/10,offsetY=kotlin.math.round((r.paper.offsetY-y)*10)/10)
+            paper.validate();layout.layout(mutable.value.settings.copy(paper=paper))
+            update { it.copy(paper=paper) };saveProfile()
+            message("Correção aplicada ao perfil ${paper.name}; próxima bateria usará a nova calibração")
+        } catch(e:Exception) { message("Calibração não aplicada: ${e.message}") }
+    }
     fun exportSettings()=repository.encode(mutable.value.settings)
     fun importSettings(raw:String) {
         try { val s=repository.decode(raw,commitProfiles=false);layout.layout(s);repository.decode(raw);mutable.value=mutable.value.copy(profiles=repository.profiles);update { s };message("Configurações importadas") }
