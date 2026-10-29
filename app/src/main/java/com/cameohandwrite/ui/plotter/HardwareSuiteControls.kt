@@ -19,11 +19,12 @@ import com.cameohandwrite.ui.PaperPreview
     onReport:((HardwareTestReport)->HardwareTestReport)->Unit,onCalibrate:()->Unit
 ) {
     var prepared by remember(state.model,state.connected,state.suiteRunning,suite?.paper) { mutableStateOf(false) }
-    var force by remember { mutableIntStateOf(5) };var speed by remember { mutableIntStateOf(5) }
+    var force by remember(report?.startedAt) { mutableIntStateOf(report?.setup?.force ?: 5) };var speed by remember(report?.startedAt) { mutableIntStateOf(report?.setup?.speed ?: 5) }
     val recognized=state.connected && Cameo5Driver.identifiesOriginalCameo5(state.model)
     val idle=!state.testing && !state.identifying && !state.queryingStatus
     Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Text("Bateria completa com caneta",style=MaterialTheme.typography.titleLarge)
+        Text("Envio rápido: sem espera fixa em cada segmento; pausa ao final do bloco atual.",style=MaterialTheme.typography.bodySmall)
         Text("Uma execução: traço de 5 mm, dois traços separados, quadrado de 10 mm, cruzes de alinhamento e Olá ação 123. Avalie tudo ao final; o relatório reúne os comandos e suas observações.")
         Text("Use papel de descarte preso à base, caneta no suporte 1 e suporte 2 vazio. Retire qualquer lâmina. Confira a altura do adaptador e a origem após carregar a base. A prévia usa o perfil da aba Folha e sua calibração.")
         suite?.let { PaperPreview(it.preview,it.paper,Modifier.fillMaxWidth().height(280.dp)) }
@@ -45,14 +46,16 @@ import com.cameohandwrite.ui.PaperPreview
             Text("${state.suiteDone} / ${state.suiteTotal} traços")
             LinearProgressIndicator(progress={if(state.suiteTotal>0) state.suiteDone.toFloat()/state.suiteTotal else 0f},modifier=Modifier.fillMaxWidth())
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick=onPause) { Text(if(state.suitePaused) "Retomar bateria" else "Pausar após traço") }
+                OutlinedButton(onClick=onPause) { Text(if(state.suitePaused) "Retomar bateria" else "Pausar após bloco") }
                 OutlinedButton(onClick=onStop) { Text("Interromper bateria") }
             }
-            Text("Pausa/interrupção ocorre após levantar a caneta no ponto confirmado. Não aborta o comando que a máquina já recebeu. Em falha de comunicação, confira a máquina: a caneta pode ficar baixada.",style=MaterialTheme.typography.bodySmall)
+            Text("Pausa/interrupção aguarda o bloco atual (até 512 bytes), que termina com a caneta levantada. Não aborta o comando que a máquina já recebeu. Em falha de comunicação, confira a máquina: a caneta pode ficar baixada.",style=MaterialTheme.typography.bodySmall)
         }
         report?.let { r ->
             HorizontalDivider();Text("Resultado da bateria",style=MaterialTheme.typography.titleMedium)
-            Text(r.outcome);Text("Perfil usado: ${r.paper.name}; ${r.model.trim()}")
+            Text(r.outcome)
+            r.elapsedMillis?.let { Text("Duração: ${"%.1f".format(it/1000.0)} s · ${r.streamBlocks} blocos · ${r.statusQueries} consultas") }
+            Text("Perfil usado: ${r.paper.name}; ${r.model.trim()}")
             r.stages.forEachIndexed { index,s ->
                 Text(s.title+" — "+s.execution)
                 Text(s.expected,style=MaterialTheme.typography.bodySmall)

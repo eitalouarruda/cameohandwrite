@@ -30,6 +30,9 @@ class BleDiagnostics(private val context:Context) {
     private val reportMutable=MutableStateFlow<HardwareTestReport?>(null)
     val report=reportMutable.asStateFlow()
     @Volatile private var recordingSuite=false
+    private var suiteGattWrites=0
+    private var suiteStatusQueries=0
+    private var suiteStreamBlocks=0
     fun restoreReport(report:HardwareTestReport?) { if(reportMutable.value==null) reportMutable.value=report }
     fun editReport(change:(HardwareTestReport)->HardwareTestReport) { if(!mutable.value.suiteRunning) reportMutable.update { it?.let(change) } }
     private val manager=context.getSystemService(BluetoothManager::class.java)
@@ -110,6 +113,7 @@ class BleDiagnostics(private val context:Context) {
     }
     private suspend fun readStatus(g:BluetoothGatt,c:BluetoothGattCharacteristic):Cameo5Driver.Status {
         check(g===gatt && mutable.value.connected) { "Conexão interrompida" }
+        if(recordingSuite) suiteStatusQueries++
         val response=query(g,c,Cameo5Driver.statusQuery)
         val status=Cameo5Driver.decodeStatus(response)
         val label=when(status) {
@@ -159,14 +163,23 @@ class BleDiagnostics(private val context:Context) {
         stopProbe=false
         reportMutable.value=HardwareTestReport.start(mutable.value.model,suite,setup)
         mutable.value=mutable.value.copy(testing=true,suiteRunning=true,suitePaused=false,suiteDone=0,suiteTotal=suite.stages.sumOf { it.page.strokes.size },suiteStage="Preparando",readyForProbe=false)
+        val started=android.os.SystemClock.elapsedRealtime()
+        suiteGattWrites=0;suiteStatusQueries=0;suiteStreamBlocks=0
         recordingSuite=true
+        val priorityAccepted=try { g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) } catch(_:SecurityException) { false }
+        log("Prioridade BLE alta solicitada: $priorityAccepted; intervalo real depende do Android/equipamento")
+        log("Envio em blocos de até 512 bytes, cada um finalizado com caneta levantada; ATT de 20 bytes com confirmação")
         log("BATERIA DE CANETA: suporte 1, força ${setup.force}, velocidade ${setup.speed} (escala GPGL); perfil ${suite.paper.name}")
         try {
             val complete=CameoTestSuite.run(mutable.value.model,suite,setup,object:CameoMotionProbe.Link {
                 override suspend fun status()=readStatus(g,c)
                 override suspend fun write(command:ByteArray) {
                     check(g===gatt && mutable.value.connected && g===identifiedGatt) { "Conexão alterada; sem repetição de comandos" }
-                    writeConfirmed(g,c,command)
+                    CameoBleWriter.write(command) { fragment ->
+                        check(g===gatt && mutable.value.connected && g===identifiedGatt) { "Conexão alterada durante bloco; não haverá repetição" }
+                        writeConfirmed(g,c,fragment)
+                    }
+                    suiteStreamBlocks++
                 }
             },stop={stopProbe},paused={mutable.value.suitePaused},onStage={index,title ->
                 mutable.value=mutable.value.copy(suiteStage=title)
@@ -181,13 +194,19 @@ class BleDiagnostics(private val context:Context) {
             log("Falha: ${e.message}. A caneta pode permanecer baixada; confira a máquina antes de retirar a folha.")
             disconnect();throw e
         } finally {
+            val elapsed=android.os.SystemClock.elapsedRealtime()-started
+            log("Métricas: ${elapsed} ms; $suiteGattWrites escritas GATT; $suiteStatusQueries consultas; $suiteStreamBlocks blocos")
+            reportMutable.update { r -> r?.copy(elapsedMillis=elapsed,gattWrites=suiteGattWrites,statusQueries=suiteStatusQueries,streamBlocks=suiteStreamBlocks) }
+            if(g===gatt && mutable.value.connected) {
+                try { g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_BALANCED) } catch(_:SecurityException) { }
+            }
             recordingSuite=false
             mutable.value=mutable.value.copy(testing=false,suiteRunning=false,suitePaused=false)
         }
     }
     fun pauseSuite() { if(mutable.value.suiteRunning) {
         mutable.value=mutable.value.copy(suitePaused=!mutable.value.suitePaused)
-        log(if(mutable.value.suitePaused) "Pausa solicitada após levantar a caneta no traço atual" else "Bateria retomada")
+        log(if(mutable.value.suitePaused) "Pausa solicitada após o bloco atual, com caneta levantada" else "Bateria retomada")
     } }
     fun stopMotionTest() {
         stopProbe=true
@@ -203,6 +222,7 @@ class BleDiagnostics(private val context:Context) {
             if(Build.VERSION.SDK_INT>=33) g.writeCharacteristic(c,bytes,BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)==BluetoothStatusCodes.SUCCESS
             else { @Suppress("DEPRECATION") c.value=bytes;c.writeType=BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT; @Suppress("DEPRECATION") g.writeCharacteristic(c) }
         }
+        if(recordingSuite) suiteGattWrites++
         log("TX ${c.uuid}: "+bytes.joinToString(" ") { "%02x".format(it.toInt() and 255) })
     }
     private val stop=Runnable { stopScan() }

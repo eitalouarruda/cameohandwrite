@@ -83,6 +83,8 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
         return buildString {
             appendLine("Cameo Handwrite · ${r.model.trim()} · ${r.startedAt}")
             appendLine(r.outcome)
+            appendLine("Envio: ${r.sendMode}")
+            r.elapsedMillis?.let { appendLine("Duração: ${it/1000.0} s; blocos=${r.streamBlocks}; consultas=${r.statusQueries}; escritas GATT=${r.gattWrites}") }
             appendLine("Força ${r.setup.force}; velocidade ${r.setup.speed} (escala GPGL)")
             r.stages.forEach { appendLine("${it.title}: ${it.execution}; observação: ${it.observation}") }
             appendLine("Quadrado: largura=${r.squareWidth} mm; altura=${r.squareHeight} mm")

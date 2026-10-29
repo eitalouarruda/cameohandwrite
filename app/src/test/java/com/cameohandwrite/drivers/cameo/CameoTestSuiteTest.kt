@@ -11,8 +11,11 @@ class CameoTestSuiteTest {
     private val model="CAMEO 5 V1.04"
     private fun smallSuite()=HardwareSuite(Paper(),listOf(HardwareStage("Teste","Traço",Page(listOf(listOf(Pt(30.0,20.0),Pt(35.0,20.0),Pt(40.0,20.0))),1))))
     private class Link:CameoMotionProbe.Link {
-        val sent=mutableListOf<String>();var onWrite:(String)->Unit={};var statusValue=Cameo5Driver.Status.READY
-        override suspend fun status()=statusValue
+        val sent=mutableListOf<String>()
+        val commands get()=sent.flatMap { data -> data.split(Cameo5Driver.ETX).filter {it.isNotEmpty()}.map {it+Cameo5Driver.ETX} }
+        var statusReads=0
+        var onWrite:(String)->Unit={};var statusValue=Cameo5Driver.Status.READY
+        override suspend fun status():Cameo5Driver.Status {statusReads++;return statusValue}
         override suspend fun write(command:ByteArray) {val text=command.toString(Charsets.US_ASCII);sent.add(text);onWrite(text)}
     }
     @Test fun buildsFiveMeasuredPatternsWithRealSamplePaths() {
@@ -43,22 +46,24 @@ class CameoTestSuiteTest {
     @Test fun sendsCompleteStrokeAndLiftsAtEndpoint() = runBlocking {
         val link=Link()
         assertTrue(CameoTestSuite.run(model,smallSuite(),PenSetup(),link,pollMillis=1))
-        assertEquals(listOf("M400,600\u0003","D400,700\u0003","D400,800\u0003","M400,800\u0003"),link.sent.drop(6))
-        assertTrue(link.sent.all {it.toByteArray().size<=20})
+        assertEquals(listOf("M400,600\u0003","D400,700\u0003","D400,800\u0003","M400,800\u0003"),link.commands.drop(6))
+        assertTrue(link.sent.all {it.toByteArray().size<=512})
     }
-    @Test fun stopDuringDrawingLiftsAtLastConfirmedPointAndSendsNoMoreDrawCommands() = runBlocking {
+    @Test fun stopDuringBlockFinishesPenUpBlockAndSendsNoNextStage() = runBlocking {
         val link=Link();var stop=false
-        link.onWrite={if(it.startsWith("D")) stop=true}
-        assertFalse(CameoTestSuite.run(model,smallSuite(),PenSetup(),link,stop={stop},pollMillis=1))
-        assertEquals(listOf("M400,600\u0003","D400,700\u0003","M400,700\u0003"),link.sent.drop(6))
+        link.onWrite={if(it.contains("D")) stop=true}
+        val base=smallSuite();val suite=base.copy(stages=base.stages+base.stages)
+        assertFalse(CameoTestSuite.run(model,suite,PenSetup(),link,stop={stop},pollMillis=1))
+        assertEquals(listOf("M400,600\u0003","D400,700\u0003","D400,800\u0003","M400,800\u0003"),link.commands.drop(6))
+        assertEquals(2,link.sent.size) // Setup + one bounded block; no guessed recovery or return.
     }
-    @Test fun pauseHoldsBetweenStrokesWithPenUp() = runBlocking {
+    @Test fun pauseHoldsBetweenBlocksWithPenUp() = runBlocking {
         val link=Link();var paused=false
-        val base=smallSuite();val suite=base.copy(stages=listOf(base.stages.single().copy(page=Page(base.preview.strokes+base.preview.strokes,1))))
+        val base=smallSuite();val suite=base.copy(stages=base.stages+base.stages)
         val task=async {CameoTestSuite.run(model,suite,PenSetup(),link,paused={paused},onStroke={done,_->if(done==1) paused=true},pollMillis=1)}
         withTimeout(5000) { while(!paused) delay(1) }
         val before=link.sent.size;delay(30)
-        assertEquals(before,link.sent.size);assertTrue(link.sent.last().startsWith("M"))
+        assertEquals(before,link.sent.size);assertTrue(link.commands.last().startsWith("M"))
         paused=false;assertTrue(task.await())
     }
     @Test fun busyBeforeStartSendsNothing() = runBlocking {
@@ -67,10 +72,21 @@ class CameoTestSuiteTest {
         assertTrue(link.sent.isEmpty())
     }
     @Test fun unknownStatusDoesNotRetryOrSendFurtherCommands() = runBlocking {
-        val link=Link();link.onWrite={if(it.startsWith("D")) link.statusValue=Cameo5Driver.Status.UNKNOWN}
+        val link=Link();link.onWrite={if(it.contains("D")) link.statusValue=Cameo5Driver.Status.UNKNOWN}
         try {CameoTestSuite.run(model,smallSuite(),PenSetup(),link,pollMillis=1);fail("unknown accepted")} catch(_:IllegalStateException) {}
-        assertEquals(1,link.sent.count {it.startsWith("D")})
-        assertTrue(link.sent.last().startsWith("D")) // Uncertain state: no guessed recovery commands.
+        assertEquals(1,link.sent.count {it.contains("D")})
+        assertEquals(2,link.sent.size) // No retry or recovery after an uncertain block status.
+    }
+    @Test fun sampleAvoidsPerSegmentStatusRoundTrips() = runBlocking {
+        val suite=CameoTestSuite.build(Paper(),fonts)
+        val link=Link();var done=0
+        assertTrue(CameoTestSuite.run(model,suite,PenSetup(),link,onStroke={n,_->done=n}))
+        val oldCommands=6+suite.preview.strokes.sumOf { it.size+1 }
+        assertTrue("Status requests ${link.statusReads} vs old command count $oldCommands",link.statusReads*5<oldCommands)
+        assertEquals(suite.preview.strokes.size,done)
+        val encoded=suite.stages.flatMap { Cameo5Driver.encode(it.page,suite.paper).toString(Charsets.US_ASCII).split(Cameo5Driver.ETX).filter { it.isNotEmpty() } }
+        assertEquals(encoded.filter {it.startsWith("D")},link.commands.filter {it.startsWith("D")}.map {it.trimEnd(Cameo5Driver.ETX)})
+        println("SAMPLE PERF: old mandatory waits=${oldCommands*100} ms; ready queries now=${link.statusReads}; stream blocks=${link.sent.size}; fixed waits now=0")
     }
     @Test fun wrongModelSendsNothing() = runBlocking {
         val link=Link()

@@ -3,7 +3,6 @@ package com.cameohandwrite.drivers.cameo
 import com.cameohandwrite.domain.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
-import kotlin.math.roundToInt
 
 data class HardwareStage(val title:String,val expected:String,val page:Page)
 data class HardwareSuite(val paper:Paper,val stages:List<HardwareStage>) {
@@ -60,19 +59,21 @@ object CameoTestSuite {
         require(points.maxOf { it.x }-points.minOf { it.x }<=85 && points.maxOf { it.y }-points.minOf { it.y }<=110) { "Bateria limitada a 85 × 110 mm" }
         suite.stages.forEach { stage -> require(stage.page.strokes.all { it.size>=2 });Cameo5Driver.encode(stage.page,suite.paper) }
     }
-    private fun command(type:Char,p:Pt)=("$type${(p.y*20).roundToInt()},${(p.x*20).roundToInt()}"+Cameo5Driver.ETX).toByteArray(Charsets.US_ASCII)
-    /** Stops/pauses after raising at the last confirmed point. Never retries uncertain writes. */
+    /** Bounded pen-up blocks preserve every original draw segment, without per-segment idle waits.
+     * Link.write acknowledges the full stream; status is checked between blocks, not ATT fragments.
+     */
     suspend fun run(
         model:String,suite:HardwareSuite,setup:PenSetup,link:CameoMotionProbe.Link,
         stop:()->Boolean={false},paused:()->Boolean={false},
         onStage:(Int,String)->Unit={_,_->},onStroke:(Int,Int)->Unit={_,_->},
-        pollMillis:Long=100,timeoutMillis:Long=15000
+        pollMillis:Long=50,timeoutMillis:Long=30000
     ):Boolean {
         require(Cameo5Driver.identifiesOriginalCameo5(model)) { "Identifique uma Cameo 5 original" }
-        validate(suite);val setupCommands=setup.commands()
+        validate(suite);val setupCommands=setup.commands().fold(byteArrayOf()) { a,b->a+b }
+        // Compile and validate all blocks before configuring or moving the machine.
+        val stageBlocks=suite.stages.map { CameoStrokeBlocks.build(it.page,suite.paper) }
         require(pollMillis>0 && timeoutMillis>0)
         suspend fun ready() { withTimeout(timeoutMillis) {
-            delay(pollMillis)
             while(true) when(link.status()) {
                 Cameo5Driver.Status.READY->return@withTimeout
                 Cameo5Driver.Status.MOVING->delay(pollMillis)
@@ -80,31 +81,25 @@ object CameoTestSuite {
                 Cameo5Driver.Status.UNKNOWN->error("Estado desconhecido; bateria interrompida")
             }
         } }
-        suspend fun send(bytes:ByteArray) { require(bytes.size<=20);link.write(bytes);ready() }
+        suspend fun send(bytes:ByteArray) { require(bytes.size<=CameoStrokeBlocks.MAX_BYTES);link.write(bytes);ready() }
         suspend fun gate():Boolean {
-            while(paused() && !stop()) delay(100)
+            while(paused() && !stop()) delay(50)
             if(stop()) return false
             check(link.status()==Cameo5Driver.Status.READY) { "Máquina não está pronta" }
             return !stop()
         }
         if(!gate()) return false
         onStage(-1,"Configurando suporte 1 para teste de caneta")
-        for(c in setupCommands) { if(stop()) return false;send(c) }
+        send(setupCommands)
         val total=suite.stages.sumOf { it.page.strokes.size };var done=0
         for((index,stage) in suite.stages.withIndex()) {
-            if(!gate()) return false
             onStage(index,stage.title)
-            for(stroke in stage.page.strokes) {
+            for(block in stageBlocks[index]) {
                 if(!gate()) return false
-                var point=stroke.first()
-                send(command('M',point))
-                for(next in stroke.drop(1)) {
-                    if(stop()) break
-                    send(command('D',next));point=next
-                }
-                // Lift at the last acknowledged endpoint before honoring stop or pause.
-                send(command('M',point))
-                done++;onStroke(done,total)
+                // Finish this bounded block even if pause/stop arrives mid-write: it ends with M.
+                // Truncating a byte stream could leave an incomplete command or the pen down.
+                send(block.bytes)
+                done+=block.completedStrokes;onStroke(done,total)
                 if(stop()) return false
             }
             onStage(index,stage.title+" · envio concluído; observação pendente")

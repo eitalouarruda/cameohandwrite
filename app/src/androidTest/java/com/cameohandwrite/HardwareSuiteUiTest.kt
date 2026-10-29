@@ -36,7 +36,7 @@ class HardwareSuiteUiTest {
         compose.onNodeWithText("Executar bateria completa").performScrollTo().assertIsEnabled().performClick()
         compose.runOnIdle {assertEquals(1,calls);state.value=state.value.copy(testing=true,suiteRunning=true)}
         compose.onNodeWithText("Executar bateria completa").assertIsNotEnabled()
-        compose.onNodeWithText("Pausar após traço").assertExists()
+        compose.onNodeWithText("Pausar após bloco").assertExists()
         compose.onNodeWithText("Interromper bateria").assertExists()
     }
 }
