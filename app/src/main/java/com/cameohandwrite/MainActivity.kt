@@ -186,7 +186,7 @@ class MainActivity:ComponentActivity() {
                         Text("Irregularidade: ${s.irregularity}%")
                         Slider(s.irregularity.toFloat(),{v->vm.update {it.copy(irregularity=v.toInt())}},valueRange=0f..100f)
                         Text("Ao abrir, o app usa letra feia e escrita rápida. Texto e perfil de folha ficam salvos.",style=MaterialTheme.typography.bodySmall)
-                        TextButton(onClick={advanced=!advanced}) {Text(if(advanced) "Ocultar opções avançadas" else "Opções avançadas")}
+                        TextButton(onClick={advanced=!advanced},enabled=!ble.testing) {Text(if(advanced) "Ocultar opções avançadas" else "Opções avançadas")}
                         if(advanced) {
                             NumberField("Espaço entre palavras (mm)",s.wordSpace) {v->vm.update {it.copy(wordSpace=v)}}
                             Choices("Alinhamento",Align.entries.toList(),s.alignment,{it.label}) {v->vm.update {it.copy(alignment=v)}}

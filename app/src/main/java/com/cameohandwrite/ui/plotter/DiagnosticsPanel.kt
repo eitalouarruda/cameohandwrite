@@ -14,7 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 @Composable fun DiagnosticsPanel(vm:HandwriteViewModel,state:HandwriteViewModel.State,ble:BleDiagnostics.State,report:HardwareTestReport?,onExportReport:()->Unit,onExportLogs:()->Unit,onCopy:()->Unit) {
     var show by remember {mutableStateOf(false)}
     val context=LocalContext.current
-    TextButton(onClick={show=!show}) {Text(if(show) "Ocultar diagnóstico e testes" else "Diagnóstico e testes")}
+    TextButton(onClick={show=!show},enabled=!ble.testing) {Text(if(show) "Ocultar diagnóstico e testes" else "Diagnóstico e testes")}
     if(!show) return
     Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Text("${ble.model.ifBlank {"Cameo não identificada"}} · ${ble.deviceStatus}")
