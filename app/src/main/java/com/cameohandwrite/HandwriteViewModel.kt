@@ -90,8 +90,10 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
             r.stages.forEach { s ->
                 appendLine("${s.title}: ${s.execution}; observação: ${s.observation}"+(s.speed?.let {"; velocidade=$it"} ?: "")+(s.elapsedMillis?.let {"; duração=${it/1000.0} s"} ?: ""))
             }
-            appendLine("Quadrado: largura=${r.squareWidth} mm; altura=${r.squareHeight} mm")
-            appendLine("Erro medido: X=${r.errorX} mm; Y=${r.errorY} mm")
+            if(!r.comparison) {
+                appendLine("Quadrado: largura=${r.squareWidth} mm; altura=${r.squareHeight} mm")
+                appendLine("Erro medido: X=${r.errorX} mm; Y=${r.errorY} mm")
+            }
             appendLine("Notas: ${r.notes}")
         }
     }

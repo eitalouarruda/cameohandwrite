@@ -81,3 +81,14 @@ A versão 0.3.0 aguardava pelo menos 100 ms e consultava prontidão após cada M
 Todo bloco termina em M no último ponto. Traços muito longos são subdivididos com M de fechamento e retomada na mesma coordenada; nenhuma ligação D é inventada. Pausa/interrupção aguarda o término do bloco atual, em vez de um único segmento. Em falha de escrita ou status desconhecido não há repetição/reinício nem recuperação de posição presumida. O tamanho limitado e a espera por prontidão entre blocos preservam o controle de fluxo. A confirmação ATT continua significando entrega, não observação da marca física.
 
 O app solicita prioridade de conexão BLE alta durante a bateria e restaura a prioridade balanceada ao final; a solicitação não garante um intervalo de rádio específico. O relatório registra duração total (incluindo pausas), blocos transmitidos, escritas GATT confirmadas e consultas de estado, e carrega relatórios anteriores sem métricas. A melhora real na máquina requer uma nova execução; não é inferida apenas do teste de software.
+
+
+## Retorno 0.3.1 e comparação 0.3.2
+
+O usuário relatou melhora grande e forneceu duração de 22,544 s, 12 blocos, 49 consultas e 213 escritas GATT, com força 1 e velocidade 10. As cinco observações desse relatório vieram como Não avaliado, sem medidas de escala/calibração. Isso comprova uma execução enviada com melhor velocidade percebida, sem substituir avaliação visual ou metrológica.
+
+A versão 0.3.2 remove a consulta que repetia imediatamente o estado pronto após cada bloco; mantém consulta no início, depois de cada bloco e após uma pausa observada. Preserva fragmentos ATT de 20 bytes confirmados, sem assumir MTU maior nem suporte a escrita sem resposta. O stream compacto omite o M sem deslocamento entre dois traços quando o M para o início do próximo traço já faz o levantamento. Todo bloco continua terminando com M no último ponto. Remove somente duplicatas e vértices exatamente colineares na grade nativa de 0,05 mm, preservando reversões, cantos, pontos isolados e a cobertura de tinta; não usa simplificação aproximada de curvas.
+
+O parâmetro de velocidade !n,1 pode chegar a 30 no setup da linha Cameo 4/5 do Graphtec.py fixado. A UI mantém a seleção anterior e oferece comparação explícita de 10/20/30: mesma frase em três pautas, força constante, tempos e avaliações por linha. Velocidades 20/30 continuam experimentais nesta máquina. Após comparação concluída, o runner restaura a velocidade inicial 10; nenhum comando de movimento é reenviado em falha. Não altera aceleração, profundidade ou origem.
+
+O relatório acrescenta tempo por etapa, velocidade efetiva da etapa, bytes de comandos, tempo de espera por ACK e tempo total das consultas de estado. O tempo das consultas inclui seus ACKs e sobrepõe a métrica de ACK; não devem ser somados como componentes independentes. A nova medição permitirá separar latência do transporte de ganho mecânico sem prometer que velocidade 30 será três vezes mais rápida.

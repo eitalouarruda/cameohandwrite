@@ -19,7 +19,7 @@ import com.cameohandwrite.ui.PaperPreview
     onReport:((HardwareTestReport)->HardwareTestReport)->Unit,onCalibrate:()->Unit,
     comparing:Boolean=false,onMode:(Boolean)->Unit={}
 ) {
-    var prepared by remember(state.model,state.connected,state.suiteRunning,suite?.paper,suite?.comparison) { mutableStateOf(false) }
+    var prepared by remember(state.model,state.connected,state.suiteRunning,suite?.paper,suite?.comparison,comparing) { mutableStateOf(false) }
     var force by remember(report?.startedAt) { mutableIntStateOf(report?.setup?.force ?: 5) };var speed by remember(report?.startedAt) { mutableIntStateOf(report?.setup?.speed ?: 5) }
     val recognized=state.connected && Cameo5Driver.identifiesOriginalCameo5(state.model)
     val idle=!state.testing && !state.identifying && !state.queryingStatus
@@ -34,7 +34,7 @@ import com.cameohandwrite.ui.PaperPreview
         Text("Use papel de descarte preso à base, caneta no suporte 1 e suporte 2 vazio. Retire qualquer lâmina. Confira a altura do adaptador e a origem após carregar a base. A prévia usa o perfil da aba Folha e sua calibração.")
         suite?.let { PaperPreview(it.preview,it.paper,Modifier.fillMaxWidth().height(280.dp)) }
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
-        Text("Força experimental: $force · velocidade: $speed (escala do equipamento, não mm/s)")
+        Text(if(comparing) "Comparação com força $force; velocidades 10 / 20 / 30" else "Força experimental: $force · velocidade: $speed (escala do equipamento, não mm/s)")
         Text("Ajuste no mesmo APK se não marcar. Não há ajuste de profundidade de lâmina.",style=MaterialTheme.typography.bodySmall)
         Text("Força da caneta: $force")
         Slider(force.toFloat(),{force=it.toInt()},valueRange=1f..20f,steps=18,enabled=idle)
@@ -69,12 +69,14 @@ import com.cameohandwrite.ui.PaperPreview
                     listOf("Não avaliado","OK","Problema").forEach { value -> FilterChip(s.observation==value,{onReport { old -> old.copy(stages=old.stages.mapIndexed { i,stage -> if(i==index) stage.copy(observation=value) else stage }) }},enabled=!state.suiteRunning,label={Text(value)}) }
                 }
             }
+            if(!r.comparison) {
             ReportField("Largura medida do quadrado (mm)",r.squareWidth,!state.suiteRunning) { value -> onReport { it.copy(squareWidth=value) } }
             ReportField("Altura medida do quadrado (mm)",r.squareHeight,!state.suiteRunning) { value -> onReport { it.copy(squareHeight=value) } }
             Text("Erro em relação ao alvo da cruz: positivo à direita/abaixo, negativo à esquerda/acima. Informe 0 quando não houver erro.")
             ReportField("Erro X medido (mm)",r.errorX,!state.suiteRunning) { value -> onReport { it.copy(errorX=value) } }
             ReportField("Erro Y medido (mm)",r.errorY,!state.suiteRunning) { value -> onReport { it.copy(errorY=value) } }
             OutlinedButton(onClick=onCalibrate,enabled=!state.suiteRunning && r.errorX.isNotBlank() && r.errorY.isNotBlank()) { Text("Aplicar correção ao perfil e salvar") }
+            }
             OutlinedTextField(r.notes,{value->onReport { it.copy(notes=value.take(10000)) }},enabled=!state.suiteRunning,label={Text("Observações: tinta, falhas, levantamento, alinhamento")},modifier=Modifier.fillMaxWidth())
             Text("Salvo automaticamente no celular. A conclusão de envio não marca os testes como OK; essa avaliação é sua.",style=MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {

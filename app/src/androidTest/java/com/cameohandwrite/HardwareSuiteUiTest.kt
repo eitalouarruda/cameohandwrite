@@ -10,6 +10,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.cameohandwrite.data.bluetooth.BleDiagnostics
+import com.cameohandwrite.data.HardwareTestReport
 import com.cameohandwrite.domain.*
 import com.cameohandwrite.drivers.cameo.*
 import com.cameohandwrite.ui.plotter.HardwareSuiteControls
@@ -39,4 +40,18 @@ class HardwareSuiteUiTest {
         compose.onNodeWithText("Pausar após bloco").assertExists()
         compose.onNodeWithText("Interromper bateria").assertExists()
     }
+    @Test fun speedComparisonKeepsForceAndUsesTenAsTheStartingSpeed() {
+        val comparing=mutableStateOf(false)
+        val suite=HardwareSuite(Paper(),listOf(HardwareStage("Amostra","Texto",Page(listOf(listOf(Pt(30.0,20.0),Pt(35.0,20.0))),1))))
+        val report=HardwareTestReport("previous","CAMEO 5 V1.04",Paper(),PenSetup(1,10),emptyList())
+        var setup:PenSetup?=null
+        compose.setContent { MaterialTheme { Column(Modifier.verticalScroll(rememberScrollState())) {
+            HardwareSuiteControls(BleDiagnostics.State(connected=true,model="CAMEO 5 V1.04",readyForProbe=true),suite,null,report,{setup=it},{},{},{},{},{},{},comparing=comparing.value,onMode={comparing.value=it})
+        } } }
+        compose.onNodeWithText("Comparar 10 / 20 / 30").performScrollTo().performClick()
+        compose.onAllNodes(isToggleable())[0].performScrollTo().performClick()
+        compose.onNodeWithText("Executar comparação 10 / 20 / 30").performScrollTo().performClick()
+        compose.runOnIdle {assertEquals(PenSetup(1,10),setup)}
+    }
+
 }
