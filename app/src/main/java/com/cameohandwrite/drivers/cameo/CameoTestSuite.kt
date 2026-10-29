@@ -72,62 +72,13 @@ object CameoTestSuite {
         require(points.maxOf { it.x }-points.minOf { it.x }<=85 && points.maxOf { it.y }-points.minOf { it.y }<=110) { "Bateria limitada a 85 × 110 mm" }
         suite.stages.forEach { stage -> require(stage.page.strokes.all { it.size>=2 });Cameo5Driver.encode(stage.page,suite.paper) }
     }
-    /** Bounded pen-up blocks preserve every original draw segment, without per-segment idle waits.
-     * Link.write acknowledges the full stream; status is checked between blocks, not ATT fragments.
-     */
     suspend fun run(
         model:String,suite:HardwareSuite,setup:PenSetup,link:CameoMotionProbe.Link,
         stop:()->Boolean={false},paused:()->Boolean={false},
         onStage:(Int,String)->Unit={_,_->},onStroke:(Int,Int)->Unit={_,_->},
         pollMillis:Long=50,timeoutMillis:Long=30000
     ):Boolean {
-        require(Cameo5Driver.identifiesOriginalCameo5(model)) { "Identifique uma Cameo 5 original" }
-        validate(suite);val setupCommands=setup.commands().fold(byteArrayOf()) { a,b->a+b }
-        // Compile and validate all blocks before configuring or moving the machine.
-        val stageBlocks=suite.stages.map { CameoStrokeBlocks.build(it.page,suite.paper) }
-        require(pollMillis>0 && timeoutMillis>0)
-        suspend fun ready() { withTimeout(timeoutMillis) {
-            while(true) when(link.status()) {
-                Cameo5Driver.Status.READY->return@withTimeout
-                Cameo5Driver.Status.MOVING->delay(pollMillis)
-                Cameo5Driver.Status.UNLOADED->error("Base descarregada; bateria interrompida")
-                Cameo5Driver.Status.UNKNOWN->error("Estado desconhecido; bateria interrompida")
-            }
-        } }
-        suspend fun send(bytes:ByteArray) { require(bytes.size<=CameoStrokeBlocks.MAX_BYTES);link.write(bytes);ready() }
-        suspend fun gate(initial:Boolean=false):Boolean {
-            var waited=false
-            while(paused() && !stop()) {waited=true;delay(50)}
-            if(stop()) return false
-            // The previous block already ended READY. Query again only on initial start/resume,
-            // where the operator may have changed the base or used the machine while paused.
-            if(initial || waited) check(link.status()==Cameo5Driver.Status.READY) { "Máquina não está pronta" }
-            return !stop()
-        }
-        if(!gate(initial=true)) return false
-        onStage(-1,"Configurando suporte 1 para teste de caneta")
-        send(setupCommands)
-        val total=suite.stages.sumOf { it.page.strokes.size };var done=0
-        var activeSpeed=setup.speed
-        for((index,stage) in suite.stages.withIndex()) {
-            if(!gate()) return false
-            val speed=stage.speedOverride ?: setup.speed
-            if(speed!=activeSpeed) {
-                send(("!$speed,1"+Cameo5Driver.ETX).toByteArray(Charsets.US_ASCII))
-                activeSpeed=speed
-            }
-            onStage(index,stage.title)
-            for(block in stageBlocks[index]) {
-                if(!gate()) return false
-                // Finish this bounded block even if pause/stop arrives mid-write: it ends with M.
-                // Truncating a byte stream could leave an incomplete command or the pen down.
-                send(block.bytes)
-                done+=block.completedStrokes;onStroke(done,total)
-                if(stop()) return false
-            }
-            onStage(index,stage.title+" · envio concluído; observação pendente")
-        }
-        if(activeSpeed!=setup.speed && !stop()) send(("!${setup.speed},1"+Cameo5Driver.ETX).toByteArray(Charsets.US_ASCII))
-        return !stop()
+        validate(suite)
+        return CameoJobRunner.run(model,suite.paper,suite.stages,setup,link,stop,paused,onStage,onStroke,pollMillis,timeoutMillis)
     }
 }

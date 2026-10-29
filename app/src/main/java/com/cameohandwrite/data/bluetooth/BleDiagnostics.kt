@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.asStateFlow
 /** Explicit diagnostic handshake and fixed pen-up probe; discovery alone never sends commands. */
 class BleDiagnostics(private val context:Context) {
     data class Device(val name:String,val address:String,val rssi:Int)
-    data class State(val scanning:Boolean=false,val connected:Boolean=false,val devices:List<Device> = emptyList(),val log:String="Nenhum comando enviado",val knownService:Boolean=false,val identifying:Boolean=false,val model:String="",val testing:Boolean=false,val queryingStatus:Boolean=false,val testSteps:Int=0,val testAttempted:Boolean=false,val deviceStatus:String="",val testMessage:String="",val readyForProbe:Boolean=false,val suiteRunning:Boolean=false,val suitePaused:Boolean=false,val suiteStage:String="",val suiteDone:Int=0,val suiteTotal:Int=0)
+    data class State(val scanning:Boolean=false,val connected:Boolean=false,val devices:List<Device> = emptyList(),val log:String="Nenhum comando enviado",val knownService:Boolean=false,val identifying:Boolean=false,val model:String="",val testing:Boolean=false,val queryingStatus:Boolean=false,val testSteps:Int=0,val testAttempted:Boolean=false,val deviceStatus:String="",val testMessage:String="",val readyForProbe:Boolean=false,val suiteRunning:Boolean=false,val suitePaused:Boolean=false,val suiteStage:String="",val suiteDone:Int=0,val suiteTotal:Int=0,val printingPage:Boolean=false,val pageNumber:Int?=null,val printMessage:String="",val completedPage:Int?=null)
     private val mutable=MutableStateFlow(State())
     val state=mutable.asStateFlow()
     private val reportMutable=MutableStateFlow<HardwareTestReport?>(null)
@@ -166,11 +166,19 @@ class BleDiagnostics(private val context:Context) {
         } finally { mutable.value=mutable.value.copy(testing=false) }
     }
     suspend fun runSuite(suite:HardwareSuite,setup:PenSetup) = operationLock.withLock {
+        CameoTestSuite.validate(suite)
+        executeJob(suite,setup)
+    }
+    suspend fun printPage(job:PagePrintJob,setup:PenSetup) = operationLock.withLock {
+        val prepared=CameoPageJob.prepare(job.paper,job.page,job.number,job.totalPages)
+        executeJob(HardwareSuite(prepared.paper,listOf(prepared.stage)),setup,prepared.number,prepared.totalPages)
+    }
+    private suspend fun executeJob(suite:HardwareSuite,setup:PenSetup,pageNumber:Int?=null,totalPages:Int?=null) {
         val (g,c)=identifiedConnection()
-        CameoTestSuite.validate(suite);setup.commands()
+        setup.commands()
         stopProbe=false
-        reportMutable.value=HardwareTestReport.start(mutable.value.model,suite,setup)
-        mutable.value=mutable.value.copy(testing=true,suiteRunning=true,suitePaused=false,suiteDone=0,suiteTotal=suite.stages.sumOf { it.page.strokes.size },suiteStage="Preparando",readyForProbe=false)
+        reportMutable.value=HardwareTestReport.start(mutable.value.model,suite,setup).copy(pageNumber=pageNumber,totalPages=totalPages)
+        mutable.value=mutable.value.copy(testing=true,suiteRunning=pageNumber==null,printingPage=pageNumber!=null,pageNumber=pageNumber,printMessage=if(pageNumber!=null) "Escrevendo página $pageNumber de $totalPages" else mutable.value.printMessage,completedPage=null,suitePaused=false,suiteDone=0,suiteTotal=suite.stages.sumOf { it.page.strokes.size },suiteStage="Preparando",readyForProbe=false)
         val started=android.os.SystemClock.elapsedRealtime()
         suiteGattWrites=0;suiteStatusQueries=0;suiteStreamBlocks=0
         suiteGattWriteMillis=0;suiteStatusWaitMillis=0;suiteStreamBytes=0
@@ -181,7 +189,7 @@ class BleDiagnostics(private val context:Context) {
         log("Envio em blocos de até 512 bytes, cada um finalizado com caneta levantada; ATT de 20 bytes com confirmação")
         log("BATERIA DE CANETA: suporte 1, força ${setup.force}, velocidade ${setup.speed} (escala GPGL); perfil ${suite.paper.name}")
         try {
-            val complete=CameoTestSuite.run(mutable.value.model,suite,setup,object:CameoMotionProbe.Link {
+            val complete=CameoJobRunner.run(mutable.value.model,suite.paper,suite.stages,setup,object:CameoMotionProbe.Link {
                 override suspend fun status()=readStatus(g,c)
                 override suspend fun write(command:ByteArray) {
                     check(g===gatt && mutable.value.connected && g===identifiedGatt) { "Conexão alterada; sem repetição de comandos" }
@@ -203,11 +211,19 @@ class BleDiagnostics(private val context:Context) {
             },onStroke={done,total -> mutable.value=mutable.value.copy(suiteDone=done,suiteTotal=total);flushSuiteLogs() })
             val outcome=if(complete) "Envio concluído; avaliação física pendente" else "Interrompido pelo operador; próximos traços não enviados"
             reportMutable.update { r -> r?.copy(outcome=outcome,stages=r.stages.map { if(it.execution=="Em execução") it.copy(execution="Parcial; interrompido") else it }) }
+            if(pageNumber!=null) mutable.update {it.copy(completedPage=if(complete) pageNumber else null,printMessage=if(complete) "Página $pageNumber enviada. Confira a folha antes da próxima." else "Envio cancelado. A folha pode estar parcialmente escrita; use outra folha para recomeçar.")}
             log(outcome)
         } catch(e:Exception) {
             reportMutable.update { r -> r?.copy(outcome="Falha: ${e.message}; não há retomada automática",stages=r.stages.map { if(it.execution=="Em execução") it.copy(execution="Falha/parcial; verificar fisicamente") else it }) }
-            log("Falha: ${e.message}. A caneta pode permanecer baixada; confira a máquina antes de retirar a folha.")
-            disconnect();throw e
+            if(e is PlotterNotReadyException) {
+                log(e.message ?: "Máquina não está pronta")
+                if(pageNumber!=null) mutable.update {it.copy(printMessage=if(it.suiteDone==0) e.message ?: "Carregue a folha" else "Envio interrompido. Use outra folha para recomeçar: ${e.message}")}
+            } else {
+                log("Falha: ${e.message}. A caneta pode permanecer baixada; confira a máquina antes de retirar a folha.")
+                if(pageNumber!=null) mutable.update {it.copy(printMessage="Envio interrompido: ${e.message}. Não há retomada automática; confira a caneta e use outra folha antes de repetir.")}
+                disconnect()
+            }
+            throw e
         } finally {
             val elapsed=android.os.SystemClock.elapsedRealtime()-started
             log("Métricas: ${elapsed} ms; $suiteGattWrites escritas GATT; $suiteStatusQueries consultas; $suiteStreamBlocks blocos")
@@ -217,17 +233,17 @@ class BleDiagnostics(private val context:Context) {
             }
             flushSuiteLogs()
             recordingSuite=false
-            mutable.value=mutable.value.copy(testing=false,suiteRunning=false,suitePaused=false)
+            mutable.value=mutable.value.copy(testing=false,suiteRunning=false,printingPage=false,suitePaused=false)
         }
     }
-    fun pauseSuite() { if(mutable.value.suiteRunning) {
+    fun pauseSuite() { if(mutable.value.suiteRunning || mutable.value.printingPage) {
         mutable.value=mutable.value.copy(suitePaused=!mutable.value.suitePaused)
         log(if(mutable.value.suitePaused) "Pausa solicitada após o bloco atual, com caneta levantada" else "Bateria retomada")
     } }
     fun stopMotionTest() {
         stopProbe=true
         log("Solicitada interrupção das próximas etapas; isso não aborta o comando já recebido pela Cameo")
-        mutable.value=mutable.value.copy(testMessage=if(mutable.value.suiteRunning) "Parando envio após o bloco atual; aguarde a máquina" else "Parando envio após o comando atual; aguarde a máquina")
+        mutable.value=mutable.value.copy(testMessage=if(mutable.value.suiteRunning || mutable.value.printingPage) "Parando envio após o bloco atual; aguarde a máquina" else "Parando envio após o comando atual; aguarde a máquina")
     }
     private fun invalidateSession() {
         identifiedGatt=null

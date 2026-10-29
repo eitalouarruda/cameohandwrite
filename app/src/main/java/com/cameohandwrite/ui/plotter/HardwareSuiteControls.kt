@@ -70,7 +70,7 @@ import com.cameohandwrite.ui.PaperPreview
                     listOf("Não avaliado","OK","Problema").forEach { value -> FilterChip(s.observation==value,{onReport { old -> old.copy(stages=old.stages.mapIndexed { i,stage -> if(i==index) stage.copy(observation=value) else stage }) }},enabled=!state.suiteRunning,label={Text(value)}) }
                 }
             }
-            if(!r.comparison) {
+            if(!r.comparison && r.pageNumber==null) {
             ReportField("Largura medida do quadrado (mm)",r.squareWidth,!state.suiteRunning) { value -> onReport { it.copy(squareWidth=value) } }
             ReportField("Altura medida do quadrado (mm)",r.squareHeight,!state.suiteRunning) { value -> onReport { it.copy(squareHeight=value) } }
             Text("Erro em relação ao alvo da cruz: positivo à direita/abaixo, negativo à esquerda/acima. Informe 0 quando não houver erro.")

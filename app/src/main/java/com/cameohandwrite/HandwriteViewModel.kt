@@ -8,6 +8,7 @@ import com.cameohandwrite.data.HardwareReportStore
 import com.cameohandwrite.data.HardwareTestReport
 import com.cameohandwrite.drivers.cameo.*
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import com.cameohandwrite.data.bluetooth.BleDiagnostics
 import com.cameohandwrite.domain.*
 import com.cameohandwrite.simulator.PlotterSimulator
@@ -16,7 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class HandwriteViewModel(app:Application):AndroidViewModel(app) {
-    data class State(val settings:Settings=Settings(),val document:Document=Document(emptyList()),val error:String?=null,val busy:Boolean=true,val profiles:List<Paper> = emptyList(),val message:String="")
+    data class State(val settings:Settings=Settings(),val document:Document=Document(emptyList()),val error:String?=null,val busy:Boolean=true,val profiles:List<Paper> = emptyList(),val message:String="",val connecting:Boolean=false)
     private val repository=SettingsRepository(app)
     private val fontEngine=StrokeFontEngine(listOf("futural","scripts").associateWith { name -> StrokeFontEngine.parse(app.assets.open("$name.tsv").bufferedReader().use { it.readText() }) })
     private val layout=PageLayoutEngine(fontEngine)
@@ -27,12 +28,14 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
     private var renderJob:Job?=null
     private var saveJob:Job?=null
     private var simulationJob:Job?=null
+    private var printJob:Job?=null
     init { viewModelScope.launch {
-        val settings=try { repository.load() } catch(e:Exception) { mutable.value=mutable.value.copy(message="Configuração não carregada: ${e.message}");Settings() }
+        val settings=try { repository.load().forOpening() } catch(e:Exception) { mutable.value=mutable.value.copy(message="Configuração não carregada: ${e.message}");Settings() }
         mutable.value=mutable.value.copy(settings=settings,profiles=repository.profiles)
         rebuild(settings)
     } }
     fun update(change:(Settings)->Settings) {
+        if(ble.state.value.testing) {message("Aguarde o envio terminar para alterar a página");return}
         val next=change(mutable.value.settings)
         simulator.cancel();simulationJob?.cancel()
         mutable.value=mutable.value.copy(settings=next,busy=true)
@@ -55,6 +58,41 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
     fun saveProfile() {
         try { repository.saveProfile(mutable.value.settings.paper);mutable.value=mutable.value.copy(profiles=repository.profiles);update { it };message("Perfil salvo neste celular") }
         catch(e:Exception) { message(e.message ?: "Perfil inválido") }
+    }
+    fun connectPrinter(address:String) {
+        if(mutable.value.connecting || ble.state.value.testing) return
+        mutable.value=mutable.value.copy(connecting=true,message="Conectando à Cameo…")
+        viewModelScope.launch {
+            try {
+                ble.connect(address)
+                withTimeout(20000) {ble.state.first {it.connected && it.knownService}}
+                ble.identify()
+                check(Cameo5Driver.identifiesOriginalCameo5(ble.state.value.model)) {"Este dispositivo não foi identificado como Cameo 5"}
+                ble.queryStatus()
+                update {it.copy(preferredDevice=address)}
+                message(if(ble.state.value.readyForProbe) "Cameo conectada e pronta" else "Cameo conectada. Carregue a folha para escrever.")
+            } catch(e:CancellationException) {
+                ble.disconnect();message("Conexão não concluída. Confira se a Cameo está ligada e ociosa.")
+                if(e !is TimeoutCancellationException) throw e
+            } catch(e:Exception) {ble.disconnect();message("Não foi possível conectar: ${e.message}")}
+            finally {mutable.value=mutable.value.copy(connecting=false)}
+        }
+    }
+    fun printPage(index:Int) {
+        val snapshot=mutable.value
+        if(ble.state.value.testing || snapshot.connecting || printJob?.isActive==true) return
+        try {
+            require(!snapshot.busy && snapshot.error==null) {"Aguarde a prévia ficar pronta"}
+            val page=snapshot.document.pages.getOrNull(index) ?: error("Página não encontrada")
+            val job=CameoPageJob.prepare(snapshot.settings.paper,page,index+1,snapshot.document.pages.size)
+            val setup=PenSetup(snapshot.settings.penForce,snapshot.settings.penSpeed)
+            message("")
+            printJob=viewModelScope.launch {
+                try {ble.printPage(job,setup)}
+                catch(e:CancellationException) {throw e}
+                catch(e:Exception) {message("Não foi possível concluir a página: ${e.message}")}
+            }
+        } catch(e:Exception) {message(e.message ?: "Página inválida")}
     }
     fun identifyDevice() { viewModelScope.launch {
         try { ble.identify() } catch(e:Exception) { message("Identificação BLE falhou: ${e.message}") }
@@ -90,7 +128,7 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
             r.stages.forEach { s ->
                 appendLine("${s.title}: ${s.execution}; observação: ${s.observation}"+(s.speed?.let {"; velocidade=$it"} ?: "")+(s.elapsedMillis?.let {"; duração=${it/1000.0} s"} ?: ""))
             }
-            if(!r.comparison) {
+            if(!r.comparison && r.pageNumber==null) {
                 appendLine("Quadrado: largura=${r.squareWidth} mm; altura=${r.squareHeight} mm")
                 appendLine("Erro medido: X=${r.errorX} mm; Y=${r.errorY} mm")
             }

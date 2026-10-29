@@ -28,13 +28,17 @@ enum class Style(val label: String) { SIMPLE("Manuscrita simples"), CURSIVE("Man
 enum class Align(val label: String) { LEFT("Esquerda"), CENTER("Centralizado"), JUSTIFY("Justificado") }
 enum class Quality(val label: String, val tolerance: Double, val speed: Double) { FAST("Rápido",0.12,45.0), NORMAL("Normal",0.05,25.0), CAREFUL("Caprichado",0.015,12.0) }
 data class Settings(
-    val text: String = "Olá! Esta é a minha escrita.\nAção, coração, café e amanhã. ¡Buenos días!",
-    val paper: Paper = Paper(), val style: Style = Style.SIMPLE,
+    val text: String = "",
+    val paper: Paper = Paper(), val style: Style = Style.MESSY,
     val letterHeight: Double = 4.0, val wordSpace: Double = 2.0,
-    val irregularity: Int = 15, val alignment: Align = Align.LEFT,
-    val quality: Quality = Quality.NORMAL, val writeSpeed: Double = 25.0,
-    val travelSpeed: Double = 70.0, val tolerance: Double = 0.05,
-    val preferredDevice: String = "", val seed: Int = 517
+    val irregularity: Int = 80, val alignment: Align = Align.LEFT,
+    val quality: Quality = Quality.FAST, val writeSpeed: Double = 45.0,
+    val travelSpeed: Double = 70.0, val tolerance: Double = 0.12,
+    val preferredDevice: String = "", val seed: Int = 517,
+    val penForce: Int = 1, val penSpeed: Int = 10
 )
 data class Page(val strokes: List<Stroke>, val lines: Int)
 data class Document(val pages: List<Page>, val warnings: List<String> = emptyList())
+
+/** Opening preference requested by the user; retain text, paper, calibration and printer settings. */
+fun Settings.forOpening()=copy(style=Style.MESSY,quality=Quality.FAST,irregularity=80,tolerance=Quality.FAST.tolerance,writeSpeed=Quality.FAST.speed)

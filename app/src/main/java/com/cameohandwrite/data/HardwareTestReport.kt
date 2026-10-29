@@ -16,7 +16,7 @@ data class HardwareTestReport(
     val notes:String="",val squareWidth:String="",val squareHeight:String="",val errorX:String="",val errorY:String="",
     val elapsedMillis:Long?=null,val gattWrites:Int=0,val statusQueries:Int=0,val streamBlocks:Int=0,
     val sendMode:String="Blocos compactos de até 512 bytes; ATT confirmado de 20 bytes",
-    val comparison:Boolean=false,val gattWriteMillis:Long=0,val statusWaitMillis:Long=0,val streamBytes:Int=0
+    val comparison:Boolean=false,val gattWriteMillis:Long=0,val statusWaitMillis:Long=0,val streamBytes:Int=0,val pageNumber:Int?=null,val totalPages:Int?=null
 ) {
     companion object {
         fun start(model:String,suite:HardwareSuite,setup:PenSetup)=HardwareTestReport(Instant.now().toString(),model,suite.paper,setup,suite.stages.map { StageReport(it.title,it.expected,speed=it.speedOverride ?: setup.speed) },comparison=suite.comparison)
@@ -26,10 +26,11 @@ data class HardwareTestReport(
             val p=j.getJSONObject("paper")
             val paper=Paper(p.getString("name"),p.getDouble("width"),p.getDouble("height"),p.getDouble("left"),p.getDouble("right"),p.getDouble("top"),p.getDouble("bottom"),p.getDouble("holes"),p.getDouble("firstLine"),p.getDouble("lineSpacing"),p.getDouble("offsetX"),p.getDouble("offsetY"))
             val array=j.getJSONArray("stages");val events=j.getJSONArray("events")
-            return HardwareTestReport(j.getString("startedAt"),j.getString("model"),paper,PenSetup(j.getInt("force"),j.getInt("speed")),(0 until array.length()).map { val s=array.getJSONObject(it);StageReport(s.getString("title"),s.getString("expected"),s.getString("execution"),s.getString("observation"),s.optInt("speed",-1).takeIf {it>=1},s.optLong("elapsedMillis",-1).takeIf {it>=0}) },j.getString("outcome"),(0 until events.length()).map { events.getString(it) },j.optString("notes"),j.optString("squareWidth"),j.optString("squareHeight"),j.optString("errorX"),j.optString("errorY"),j.optLong("elapsedMillis",-1).takeIf { it>=0 },j.optInt("gattWrites"),j.optInt("statusQueries"),j.optInt("streamBlocks"),j.optString("sendMode","Por segmento (versão anterior)"),j.optBoolean("comparison"),j.optLong("gattWriteMillis"),j.optLong("statusWaitMillis"),j.optInt("streamBytes"))
+            return HardwareTestReport(j.getString("startedAt"),j.getString("model"),paper,PenSetup(j.getInt("force"),j.getInt("speed")),(0 until array.length()).map { val s=array.getJSONObject(it);StageReport(s.getString("title"),s.getString("expected"),s.getString("execution"),s.getString("observation"),s.optInt("speed",-1).takeIf {it>=1},s.optLong("elapsedMillis",-1).takeIf {it>=0}) },j.getString("outcome"),(0 until events.length()).map { events.getString(it) },j.optString("notes"),j.optString("squareWidth"),j.optString("squareHeight"),j.optString("errorX"),j.optString("errorY"),j.optLong("elapsedMillis",-1).takeIf { it>=0 },j.optInt("gattWrites"),j.optInt("statusQueries"),j.optInt("streamBlocks"),j.optString("sendMode","Por segmento (versão anterior)"),j.optBoolean("comparison"),j.optLong("gattWriteMillis"),j.optLong("statusWaitMillis"),j.optInt("streamBytes"),j.optInt("pageNumber",-1).takeIf {it>=1},j.optInt("totalPages",-1).takeIf {it>=1})
         }
     }
     fun encode():String=JSONObject().apply {
+        put("pageNumber",pageNumber ?: JSONObject.NULL);put("totalPages",totalPages ?: JSONObject.NULL)
         put("comparison",comparison);put("gattWriteMillis",gattWriteMillis);put("statusWaitMillis",statusWaitMillis);put("streamBytes",streamBytes)
         put("elapsedMillis",elapsedMillis ?: JSONObject.NULL);put("gattWrites",gattWrites);put("statusQueries",statusQueries);put("streamBlocks",streamBlocks);put("sendMode",sendMode)
         put("version",1);put("startedAt",startedAt);put("model",model);put("force",setup.force);put("speed",setup.speed);put("outcome",outcome)

@@ -1,25 +1,25 @@
 package com.cameohandwrite
 
 import android.Manifest
+import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
@@ -27,10 +27,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cameohandwrite.domain.*
-import com.cameohandwrite.data.usb.UsbDiagnostics
+import com.cameohandwrite.drivers.cameo.Cameo5Driver
 import com.cameohandwrite.ui.PaperPreview
-import com.cameohandwrite.ui.plotter.MotionProbeControls
-import com.cameohandwrite.ui.plotter.HardwareSuiteControls
+import com.cameohandwrite.ui.plotter.DiagnosticsPanel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,178 +41,198 @@ class MainActivity:ComponentActivity() {
     } }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable fun HandwriteApp(vm:HandwriteViewModel=viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
-    val simulation by vm.simulator.state.collectAsStateWithLifecycle()
     val ble by vm.ble.state.collectAsStateWithLifecycle()
-    val hardwareReport by vm.ble.report.collectAsStateWithLifecycle()
+    val report by vm.ble.report.collectAsStateWithLifecycle()
+    val simulation by vm.simulator.state.collectAsStateWithLifecycle()
     val s=state.settings
-    var tab by remember { mutableIntStateOf(0) }
-    var page by remember { mutableIntStateOf(0) }
-    var trajectory by remember { mutableStateOf(false) }
     val context=LocalContext.current
     val scope=rememberCoroutineScope()
-    val currentPage=page.coerceIn(0,maxOf(0,state.document.pages.lastIndex))
-    val exportSvg=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/svg+xml")) { uri ->
-        if(uri!=null) scope.launch {
-            val p=state.document.pages.getOrNull(currentPage)
-            if(p!=null) try { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(PlotPlanner.svg(p,s.paper)) } };vm.message("SVG da página ${currentPage+1} exportado") } catch(e:Exception) { vm.message("Falha ao exportar: ${e.message}") }
+    var tab by remember {mutableIntStateOf(0)}
+    var selectedPage by remember {mutableIntStateOf(0)}
+    val page=selectedPage.coerceIn(0,maxOf(0,state.document.pages.lastIndex))
+    val current=state.document.pages.getOrNull(page)
+    val ready=ble.connected && Cameo5Driver.identifiesOriginalCameo5(ble.model)
+    var devicesOpen by remember {mutableStateOf(false)}
+    var awaitingConnection by remember {mutableStateOf(false)}
+    var pendingPage by remember {mutableStateOf<Int?>(null)}
+    var advanced by remember {mutableStateOf(false)}
+    val permissions=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if(grants.values.all {it}) vm.ble.scan() else vm.message("Permita Bluetooth/localização para encontrar a Cameo")
+    }
+    fun search() {
+        permissions.launch(if(Build.VERSION.SDK_INT>=31) arrayOf(Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.BLUETOOTH_CONNECT) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
+    }
+    LaunchedEffect(ready,state.connecting,state.busy,devicesOpen,pendingPage,awaitingConnection) {
+        if(awaitingConnection && ready && !state.connecting && !state.busy && devicesOpen) {
+            devicesOpen=false;awaitingConnection=false
+            val target=pendingPage;pendingPage=null
+            if(target!=null) vm.printPage(target)
         }
     }
-    val exportAlignment=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/svg+xml")) { uri ->
-        if(uri!=null) scope.launch { try {
-            val test=PlotPlanner.alignment(s.paper)
-            withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(PlotPlanner.svg(test,s.paper)) } }
-            vm.message("Teste de alinhamento exportado; execute com um fluxo físico já validado")
-        } catch(e:Exception) { vm.message("Teste inválido: ${e.message}") } }
+    DisposableEffect(ble.testing) {
+        val window=(context as? Activity)?.window
+        if(ble.testing) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)}
     }
-    val exportHardwareReport=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if(uri!=null) scope.launch { try {
-            val data=vm.exportHardwareReport()
-            withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(data) } }
-            vm.message("Relatório único exportado com todas as etapas e observações")
-        } catch(e:Exception) { vm.message("Falha ao exportar relatório: ${e.message}") } }
+    val svg=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/svg+xml")) { uri ->
+        if(uri!=null && current!=null) scope.launch {try {
+            val data=PlotPlanner.svg(current,s.paper)
+            withContext(Dispatchers.IO) {context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {it.write(data)}}
+            vm.message("SVG da página ${page+1} exportado")
+        } catch(e:Exception) {vm.message("Não foi possível exportar: ${e.message}")} }
     }
     val exportConfig=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if(uri!=null) scope.launch { try { val data=vm.exportSettings();withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(data) } };vm.message("Configurações exportadas") } catch(e:Exception) { vm.message("Falha: ${e.message}") } }
+        if(uri!=null) scope.launch {try {
+            val data=vm.exportSettings()
+            withContext(Dispatchers.IO) {context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {it.write(data)}}
+            vm.message("Configurações exportadas")
+        } catch(e:Exception) {vm.message("Falha: ${e.message}")} }
     }
     val importConfig=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if(uri!=null) scope.launch { try { val text=withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readTextLimited() } ?: error("Arquivo inacessível") };vm.importSettings(text) } catch(e:Exception) { vm.message("Falha: ${e.message}") } }
+        if(uri!=null) scope.launch {try {
+            val text=withContext(Dispatchers.IO) {context.contentResolver.openInputStream(uri)?.bufferedReader()?.use {it.readLimited()} ?: error("Arquivo inacessível")}
+            vm.importSettings(text)
+        } catch(e:Exception) {vm.message("Falha: ${e.message}")} }
+    }
+    val exportReport=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if(uri!=null) scope.launch {try {
+            val data=vm.exportHardwareReport()
+            withContext(Dispatchers.IO) {context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {it.write(data)}}
+            vm.message("Relatório exportado")
+        } catch(e:Exception) {vm.message("Falha: ${e.message}")} }
     }
     val exportLogs=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
-        if(uri!=null) scope.launch { try { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(ble.log) } };vm.message("Diagnóstico BLE exportado") } catch(e:Exception) { vm.message("Falha: ${e.message}") } }
-    }
-    val permissions=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
-        if(results.values.all { it }) vm.ble.scan() else vm.message("Permissão de Bluetooth/localização necessária para descobrir dispositivos")
+        if(uri!=null) scope.launch {try {withContext(Dispatchers.IO) {context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {it.write(ble.log)}}} catch(e:Exception) {vm.message("Falha: ${e.message}")} }
     }
     Surface(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-            Column(Modifier.padding(horizontal=20.dp,vertical=12.dp)) {
-                Text("Cameo Handwrite",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
-                Text("Do texto ao papel pautado",color=MaterialTheme.colorScheme.primary)
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Cameo Handwrite",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
+                    Text("${BuildConfig.VERSION_NAME} · ${if(s.style==Style.MESSY) "Feia" else s.style.label} · ${s.quality.label}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)
+                }
+                TextButton(onClick={pendingPage=null;devicesOpen=true;search()},enabled=!ble.testing && !state.connecting) {Text(if(state.connecting) "Conectando…" else if(ready) "Conectada" else "Conectar")}
             }
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                listOf("Editor","Folha","Prévia","Escrita","Ajustes").forEachIndexed { index,label -> FilterChip(selected=tab==index,onClick={tab=index},label={Text(label)}) }
-            }
-            if(state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            state.error?.let { Text(it,Modifier.padding(12.dp),color=MaterialTheme.colorScheme.error) }
-            if(state.message.isNotBlank()) Text(state.message,Modifier.padding(horizontal=16.dp,vertical=4.dp),style=MaterialTheme.typography.bodySmall)
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            if(state.busy || state.connecting) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Column(Modifier.weight(1f).verticalScroll(remember(tab) {ScrollState(0)}).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 when(tab) {
                     0 -> {
-                        SectionTitle("Seu texto")
-                        OutlinedTextField(value=s.text,onValueChange={ text -> if(text.length<=200000) vm.update { it.copy(text=text) } else vm.message("Limite de 200 mil caracteres") },label={Text("Cole ou escreva aqui")},modifier=Modifier.fillMaxWidth().heightIn(min=210.dp,max=400.dp))
-                        Text("${s.text.length} caracteres · ${state.document.pages.size} página(s)")
-                        Choices("Estilo",Style.entries.toList(),s.style,{it.label}) { value -> vm.update { it.copy(style=value) } }
-                        NumberField("Altura das letras (mm)",s.letterHeight) { value -> vm.update { it.copy(letterHeight=value) } }
-                        NumberField("Espaço entre palavras (mm)",s.wordSpace) { value -> vm.update { it.copy(wordSpace=value) } }
-                        Choices("Alinhamento",Align.entries.toList(),s.alignment,{it.label}) { value -> vm.update { it.copy(alignment=value) } }
-                        Text("Irregularidade: ${s.irregularity}%")
-                        Slider(value=s.irregularity.toFloat(),onValueChange={v->vm.update { it.copy(irregularity=v.toInt()) }},valueRange=0f..100f)
-                        Text("Acentos e cedilha usam composição vetorial. Caracteres ausentes bloqueiam o trabalho com uma mensagem explícita.",style=MaterialTheme.typography.bodySmall)
-                        state.document.pages.getOrNull(currentPage)?.let { PaperPreview(it,s.paper,Modifier.fillMaxWidth().height(310.dp)) }
-                        Button(onClick={tab=2}) { Text("Abrir prévia e exportar") }
+                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                            SectionTitle("Seu texto")
+                            Spacer(Modifier.weight(1f))
+                            TextButton(onClick={
+                                val clip=context.getSystemService(ClipboardManager::class.java).primaryClip
+                                val text=if(clip!=null && clip.itemCount>0) clip.getItemAt(0).coerceToText(context).toString() else ""
+                                if(text.length>200000) vm.message("Limite de 200 mil caracteres") else if(text.isEmpty()) vm.message("Copie um texto primeiro") else vm.update {it.copy(text=text)}
+                            },enabled=!ble.testing && !state.connecting) {Text("Colar")}
+                            if(s.text.isNotEmpty()) TextButton(onClick={vm.update {it.copy(text="")}},enabled=!ble.testing && !state.connecting) {Text("Limpar")}
+                        }
+                        OutlinedTextField(value=s.text,onValueChange={text->if(text.length<=200000) vm.update {it.copy(text=text)} else vm.message("Limite de 200 mil caracteres")},label={Text("Cole ou escreva o texto")},enabled=!ble.testing && !state.connecting,modifier=Modifier.fillMaxWidth().heightIn(min=170.dp,max=300.dp).testTag("editorText"))
+                        state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
+                        Text(if(s.text.isBlank()) "O texto aparece aqui na folha, antes de escrever." else "${state.document.pages.size} página(s) · ${s.text.length} caracteres",style=MaterialTheme.typography.bodySmall)
+                        if(state.document.pages.size>1) Row(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                            OutlinedButton(onClick={selectedPage=page-1},enabled=page>0 && !ble.testing) {Text("Anterior")}
+                            Text("${page+1} / ${state.document.pages.size}")
+                            OutlinedButton(onClick={selectedPage=page+1},enabled=page<state.document.pages.lastIndex && !ble.testing) {Text("Próxima")}
+                        }
+                        if(current!=null) PaperPreview(current,s.paper,Modifier.fillMaxWidth().height(390.dp).testTag("pagePreview"))
+                        if(ble.printMessage.isNotBlank()) Text(ble.printMessage,color=MaterialTheme.colorScheme.primary)
+                        if(ble.printingPage) {
+                            Text("Página ${ble.pageNumber} · ${ble.suiteDone} / ${ble.suiteTotal} traços")
+                            LinearProgressIndicator(progress={if(ble.suiteTotal>0) ble.suiteDone.toFloat()/ble.suiteTotal else 0f},modifier=Modifier.fillMaxWidth())
+                            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                OutlinedButton(onClick=vm.ble::pauseSuite) {Text(if(ble.suitePaused) "Retomar" else "Pausar")}
+                                OutlinedButton(onClick=vm.ble::stopMotionTest) {Text("Cancelar envio")}
+                            }
+                            Text("A pausa ou o cancelamento aguarda o bloco atual. Deixe o app aberto durante a escrita.",style=MaterialTheme.typography.bodySmall)
+                        }
                     }
                     1 -> {
-                        SectionTitle("Folha e pautas físicas")
-                        Choices("Tamanho",listOf("A4","A5","Personalizado"),if(s.paper.width==210.0 && s.paper.height==297.0) "A4" else if(s.paper.width==148.0 && s.paper.height==210.0) "A5" else "Personalizado",{it}) { value ->
-                            vm.update { it.copy(paper=when(value) { "A4"->it.paper.copy(width=210.0,height=297.0);"A5"->it.paper.copy(width=148.0,height=210.0);else->it.paper }) }
+                        SectionTitle("Sua folha")
+                        Choices("Perfis",state.profiles,s.paper,{it.name}) {p->vm.update {it.copy(paper=p)}}
+                        Choices("Tamanho",listOf("A4","A5","Personalizado"),when {s.paper.width==210.0 && s.paper.height==297.0->"A4";s.paper.width==148.0 && s.paper.height==210.0->"A5";else->"Personalizado"},{it}) {v->vm.update {it.copy(paper=when(v) {"A4"->it.paper.copy(width=210.0,height=297.0);"A5"->it.paper.copy(width=148.0,height=210.0);else->it.paper})}}
+                        OutlinedTextField(s.paper.name,{v->vm.update {it.copy(paper=it.paper.copy(name=v))}},label={Text("Nome do perfil")},modifier=Modifier.fillMaxWidth())
+                        NumberField("Largura (mm)",s.paper.width) {v->vm.update {it.copy(paper=it.paper.copy(width=v))}}
+                        NumberField("Altura (mm)",s.paper.height) {v->vm.update {it.copy(paper=it.paper.copy(height=v))}}
+                        NumberField("Primeira pauta desde o topo (mm)",s.paper.firstLine) {v->vm.update {it.copy(paper=it.paper.copy(firstLine=v))}}
+                        NumberField("Distância entre pautas (mm)",s.paper.lineSpacing) {v->vm.update {it.copy(paper=it.paper.copy(lineSpacing=v))}}
+                        var margins by remember {mutableStateOf(false)}
+                        TextButton(onClick={margins=!margins}) {Text(if(margins) "Ocultar margens e calibração" else "Margens e calibração")}
+                        if(margins) {
+                            NumberField("Margem esquerda (mm)",s.paper.left) {v->vm.update {it.copy(paper=it.paper.copy(left=v))}}
+                            NumberField("Margem direita (mm)",s.paper.right) {v->vm.update {it.copy(paper=it.paper.copy(right=v))}}
+                            NumberField("Margem superior (mm)",s.paper.top) {v->vm.update {it.copy(paper=it.paper.copy(top=v))}}
+                            NumberField("Margem inferior (mm)",s.paper.bottom) {v->vm.update {it.copy(paper=it.paper.copy(bottom=v))}}
+                            NumberField("Faixa dos furos (mm)",s.paper.holes) {v->vm.update {it.copy(paper=it.paper.copy(holes=v))}}
+                            Text("Ajustes de 0,1 mm. Valores positivos deslocam à direita/abaixo.",style=MaterialTheme.typography.bodySmall)
+                            NumberField("Correção X (mm)",s.paper.offsetX) {v->vm.update {it.copy(paper=it.paper.copy(offsetX=kotlin.math.round(v*10)/10))}}
+                            NumberField("Correção Y (mm)",s.paper.offsetY) {v->vm.update {it.copy(paper=it.paper.copy(offsetY=kotlin.math.round(v*10)/10))}}
                         }
-                        OutlinedTextField(value=s.paper.name,onValueChange={v->vm.update { it.copy(paper=it.paper.copy(name=v)) }},label={Text("Nome do perfil")},modifier=Modifier.fillMaxWidth())
-                        PaperFields(s.paper) { value -> vm.update { it.copy(paper=value) } }
-                        Text("${s.paper.lineCount} pautas por página · altura útil ${fmt(s.paper.usableHeight)} mm")
-                        Button(onClick=vm::saveProfile) { Text("Salvar perfil de folha") }
-                        state.profiles.forEach { profile -> OutlinedButton(onClick={vm.update { it.copy(paper=profile) }}) { Text("Usar ${profile.name}") } }
-                        Calibration(s.paper,{p->vm.update { it.copy(paper=p) }},{ vm.simulate(currentPage,true);tab=3 },vm::saveProfile)
-                        OutlinedButton(onClick={exportAlignment.launch("cameo-calibracao.svg")},enabled=state.error==null && !state.busy) {Text("Exportar teste de alinhamento SVG")}
+                        state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
+                        Button(onClick=vm::saveProfile) {Text("Salvar perfil")}
                     }
                     2 -> {
-                        SectionTitle("Prévia física")
-                        Text("Pautas e furos são guias visuais; o SVG contém apenas escrita. Arraste e use dois dedos para ampliar.",style=MaterialTheme.typography.bodySmall)
-                        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                            OutlinedButton(onClick={page=(currentPage-1).coerceAtLeast(0)},enabled=currentPage>0) { Text("‹") }
-                            Text("${if(state.document.pages.isEmpty()) 0 else currentPage+1} / ${state.document.pages.size}")
-                            OutlinedButton(onClick={page=currentPage+1},enabled=currentPage<state.document.pages.lastIndex) { Text("›") }
+                        SectionTitle("Aparência da escrita")
+                        Choices("Fonte",Style.entries.toList(),s.style,{it.label}) {v->vm.update {it.copy(style=v)}}
+                        Choices("Escrita",Quality.entries.toList(),s.quality,{it.label}) {v->vm.update {it.copy(quality=v,tolerance=v.tolerance,writeSpeed=v.speed)}}
+                        NumberField("Altura das letras (mm)",s.letterHeight) {v->vm.update {it.copy(letterHeight=v)}}
+                        Text("Irregularidade: ${s.irregularity}%")
+                        Slider(s.irregularity.toFloat(),{v->vm.update {it.copy(irregularity=v.toInt())}},valueRange=0f..100f)
+                        Text("Ao abrir, o app usa letra feia e escrita rápida. Texto e perfil de folha ficam salvos.",style=MaterialTheme.typography.bodySmall)
+                        TextButton(onClick={advanced=!advanced}) {Text(if(advanced) "Ocultar opções avançadas" else "Opções avançadas")}
+                        if(advanced) {
+                            NumberField("Espaço entre palavras (mm)",s.wordSpace) {v->vm.update {it.copy(wordSpace=v)}}
+                            Choices("Alinhamento",Align.entries.toList(),s.alignment,{it.label}) {v->vm.update {it.copy(alignment=v)}}
+                            NumberField("Força da caneta (escala GPGL, 1–20)",s.penForce.toDouble()) {v->if(v in 1.0..20.0) vm.update {it.copy(penForce=v.toInt())}}
+                            NumberField("Velocidade da Cameo (escala GPGL, 1–30)",s.penSpeed.toDouble()) {v->if(v in 1.0..30.0) vm.update {it.copy(penSpeed=v.toInt())}}
+                            Text("Padrão físico: força 1 e velocidade 10, usados nos testes da sua Cameo. O perfil Rápido controla os trajetos, sem alterar o transporte BLE.",style=MaterialTheme.typography.bodySmall)
+                            OutlinedButton(onClick={svg.launch("cameo-pagina-${page+1}.svg")},enabled=current!=null && !state.busy && state.error==null) {Text("Exportar página em SVG")}
+                            OutlinedButton(onClick={exportConfig.launch("cameo-configuracoes.json")}) {Text("Exportar configurações")}
+                            OutlinedButton(onClick={importConfig.launch(arrayOf("application/json","text/plain"))}) {Text("Importar configurações")}
+                            OutlinedButton(onClick={vm.simulate(page)},enabled=current?.strokes?.isNotEmpty()==true && !state.busy && state.error==null && !simulation.running) {Text("Simular página")}
+                            if(simulation.total>0) {
+                                Text("${simulation.log} · ${simulation.completed}/${simulation.total}")
+                                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(onClick=vm.simulator::pause,enabled=simulation.running) {Text(if(simulation.paused) "Retomar simulação" else "Pausar simulação")}
+                                    OutlinedButton(onClick=vm.simulator::cancel,enabled=simulation.running) {Text("Cancelar simulação")}
+                                }
+                            }
+                            DiagnosticsPanel(vm,state,ble,report,onExportReport={exportReport.launch("cameo-relatorio.json")},onExportLogs={exportLogs.launch("cameo-diagnostico-ble.txt")},onCopy={context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Resultado Cameo",vm.hardwareReportSummary()));vm.message("Resumo copiado")})
+                            Text("Fontes single-line Hershey scripts/futural, com deformação determinística e acentos compostos. Licenças incluídas no APK.",style=MaterialTheme.typography.bodySmall)
                         }
-                        Row(verticalAlignment=Alignment.CenterVertically) { Switch(trajectory,{trajectory=it});Text("Trajetória e ordem dos traços") }
-                        state.document.pages.getOrNull(currentPage)?.let { p ->
-                            PaperPreview(p,s.paper,Modifier.fillMaxWidth().height(480.dp),trajectory)
-                            val plan=remember(p,s) { runCatching { PlotPlanner.plan(p,s) }.getOrNull() }
-                            plan?.let { Text("${it.strokes.size} traços · ${fmt(it.writingMm/1000)} m de escrita · estimativa ${fmt(it.seconds/60)} min") }
-                            Text("Estimativa geométrica; aceleração e comportamento real da Cameo não medidos.",style=MaterialTheme.typography.bodySmall)
-                            Button(onClick={exportSvg.launch("cameo-pagina-${currentPage+1}.svg")},enabled=!state.busy && state.error==null) { Text("Exportar esta página em SVG") }
-                        }
-                        state.document.warnings.forEach { Text(it) }
-                    }
-                    3 -> {
-                        SectionTitle("Planejamento e simulação")
-                        Choices("Perfil",Quality.entries.toList(),s.quality,{it.label}) { q -> vm.update { it.copy(quality=q,tolerance=q.tolerance,writeSpeed=q.speed) } }
-                        NumberField("Velocidade estimada de escrita (mm/s)",s.writeSpeed) { v->if(v in 1.0..100.0) vm.update { it.copy(writeSpeed=v) } }
-                        NumberField("Velocidade estimada de deslocamento (mm/s)",s.travelSpeed) { v->if(v in 1.0..200.0) vm.update { it.copy(travelSpeed=v) } }
-                        NumberField("Simplificação geométrica (mm, 0–0,5)",s.tolerance) { v->if(v in 0.0..0.5) vm.update { it.copy(tolerance=v) } }
-                        Text("Estas velocidades em mm/s servem à estimativa do editor. A bateria abaixo usa força e velocidade experimentais na escala do equipamento, sem configurar aceleração ou profundidade.",style=MaterialTheme.typography.bodySmall)
-                        Button(onClick={vm.simulate(currentPage)},enabled=!state.busy && state.error==null && !simulation.running) { Text("Simular escrita da página ${currentPage+1}") }
-                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick=vm.simulator::pause,enabled=simulation.running) { Text(if(simulation.paused) "Retomar" else "Pausar") }
-                            OutlinedButton(onClick=vm.simulator::cancel,enabled=simulation.running) { Text("Cancelar") }
-                        }
-                        Text(simulation.log)
-                        if(simulation.total>0) LinearProgressIndicator(progress={simulation.completed.toFloat()/simulation.total},modifier=Modifier.fillMaxWidth())
-                        Text("${simulation.completed} / ${simulation.total} traços")
-                        if(simulation.total>0) PaperPreview(Page(vm.simulator.recorded.toList(),0),s.paper,Modifier.fillMaxWidth().height(300.dp))
-                        HorizontalDivider()
-                        SectionTitle("Cameo 5 · diagnóstico BLE")
-                        Text("Movimento sem ferramenta já foi observado na Cameo 5 V1.04. Agora você pode testar cinco padrões com caneta em uma execução. Escrita de documentos completos continua bloqueada.")
-                        Text("Preferido: ${s.preferredDevice.ifEmpty { "nenhum" }}",style=MaterialTheme.typography.bodySmall)
-                        Button(onClick={
-                            permissions.launch(if(Build.VERSION.SDK_INT>=31) arrayOf(Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.BLUETOOTH_CONNECT) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
-                        },enabled=!ble.scanning && !ble.identifying && !ble.queryingStatus && !ble.testing) { Text(if(ble.scanning) "Buscando…" else "Buscar dispositivos BLE") }
-                        ble.devices.forEach { d -> OutlinedButton(enabled=!ble.identifying && !ble.queryingStatus && !ble.testing,onClick={vm.update { it.copy(preferredDevice=d.address) };vm.ble.connect(d.address)}) { Text("${d.name} · ${d.rssi} dBm\n${d.address}") } }
-                        if(ble.connected && ble.knownService) {
-                            Text("Identificação opcional: use somente com a máquina ociosa. O handshake reinicia o estado do protocolo (ESC EOT); não envia movimentos.",style=MaterialTheme.typography.bodySmall)
-                            OutlinedButton(onClick=vm::identifyDevice,enabled=!ble.identifying && !ble.queryingStatus && !ble.testing) { Text(if(ble.identifying) "Consultando…" else "Inicializar diagnóstico e consultar modelo") }
-                            if(ble.model.isNotBlank()) Text("Resposta FG: ${ble.model}")
-                            OutlinedButton(onClick=vm::queryDeviceStatus,enabled=ble.model.isNotBlank() && !ble.identifying && !ble.queryingStatus && !ble.testing) {Text("Consultar estado")}
-                            if(ble.deviceStatus.isNotBlank()) Text("Estado: ${ble.deviceStatus}")
-                        }
-                        var compareSpeeds by remember {mutableStateOf(false)}
-                        val activeComparison=if(ble.suiteRunning) hardwareReport?.comparison ?: compareSpeeds else compareSpeeds
-                        val suitePaper=if(ble.suiteRunning) hardwareReport?.paper ?: s.paper else s.paper
-                        val testPreview=remember(suitePaper,activeComparison) { runCatching { vm.suitePreview(suitePaper,activeComparison) } }
-                        HardwareSuiteControls(ble,testPreview.getOrNull(),testPreview.exceptionOrNull()?.message,hardwareReport,{setup ->vm.runHardwareSuite(setup,activeComparison)},vm.ble::pauseSuite,vm.ble::stopMotionTest,
-                            onExport={exportHardwareReport.launch("cameo-bateria-completa.json")},
-                            onCopy={ val clipboard=context.getSystemService(android.content.ClipboardManager::class.java);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Resultado Cameo",vm.hardwareReportSummary()));vm.message("Resumo copiado; cole na conversa se preferir") },
-                            onReport=vm.ble::editReport,onCalibrate=vm::applySuiteCalibration,comparing=activeComparison,onMode={compareSpeeds=it})
-                        var showMotion by remember { mutableStateOf(false) }
-                        OutlinedButton(onClick={showMotion=!showMotion},enabled=!ble.testing) { Text(if(showMotion) "Ocultar teste sem ferramenta" else "Mostrar teste anterior sem ferramenta") }
-                        if(showMotion) MotionProbeControls(ble,vm::queryDeviceStatus,vm::testDeviceMotion,vm.ble::stopMotionTest)
-                        if(ble.connected) OutlinedButton(onClick=vm.ble::disconnect,enabled=!ble.testing && !ble.identifying && !ble.queryingStatus) { Text("Desconectar GATT") }
-                        Text(ble.log,style=MaterialTheme.typography.bodySmall)
-                        OutlinedButton(onClick={exportLogs.launch("cameo-diagnostico-ble.txt")}) { Text("Exportar diagnóstico BLE") }
-                        var usb by remember { mutableStateOf("") }
-                        OutlinedButton(onClick={usb=UsbDiagnostics.inspect(context)}) { Text("Inspecionar USB OTG") }
-                        if(usb.isNotBlank()) Text(usb,style=MaterialTheme.typography.bodySmall)
-                        Button(onClick={},enabled=false) { Text("Escrever na Cameo · aguarda validação") }
-                    }
-                    4 -> {
-                        SectionTitle("Configurações locais")
-                        Text("Texto, folhas, calibração e preferências são salvos automaticamente neste celular. O aplicativo funciona sem conta e sem internet.")
-                        Button(onClick={exportConfig.launch("cameo-configuracoes.json")}) { Text("Exportar configurações e texto") }
-                        OutlinedButton(onClick={importConfig.launch(arrayOf("application/json","text/plain"))}) { Text("Importar configurações") }
-                        NumberField("Semente das variações",s.seed.toDouble()) {v->vm.update { it.copy(seed=v.toInt()) } }
-                        Text("Mesma semente, texto e configurações produzem os mesmos traços. A prévia e o SVG usam a geometria calibrada.")
-                        SectionTitle("Fontes e licença")
-                        Text("Hershey futural e scripts, a partir de techninja/hersheytextjs (MIT). Estilos irregular e feio são transformações determinísticas. Acentos portugueses e espanhóis são compostos sobre glifos básicos. Não há variantes alternativas de glifos nesta versão.")
-                        Text("Código-fonte e documentação: github.com/eitalouarruda/cameohandwrite",style=MaterialTheme.typography.bodySmall)
-                        Text("Teste físico necessário: Cameo 5 original, adaptador de caneta, origem da base, carregamento, limites e calibração. Comece sem caneta; depois use papel descartável.")
                     }
                 }
-                Spacer(Modifier.height(24.dp))
+                if(state.message.isNotBlank()) Text(state.message,style=MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(12.dp))
             }
+            if(tab==0 && !ble.printingPage) Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp)) {
+                Text("Folha carregada como na prévia; caneta no suporte 1 e sem lâminas.",style=MaterialTheme.typography.bodySmall)
+                Button(onClick={
+                    if(ready) vm.printPage(page) else {pendingPage=page;devicesOpen=true;search()}
+                },enabled=s.text.isNotBlank() && current?.strokes?.isNotEmpty()==true && !state.busy && state.error==null && !ble.testing && !state.connecting,modifier=Modifier.fillMaxWidth().testTag("printPage")) {Text(if(ble.completedPage==page+1) "Escrever novamente a página ${page+1}" else "Escrever página ${page+1}")}
+            }
+            TabRow(selectedTabIndex=tab) {listOf("Texto","Folha","Ajustes").forEachIndexed {index,label->Tab(selected=tab==index,onClick={tab=index},enabled=!ble.testing && !state.connecting,text={Text(label)})}}
+        }
+    }
+    if(devicesOpen) ModalBottomSheet(onDismissRequest={devicesOpen=false;pendingPage=null;awaitingConnection=false}) {
+        Column(Modifier.fillMaxWidth().heightIn(max=560.dp).verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            SectionTitle("Conectar Cameo")
+            Text("Ligue a Cameo e aguarde ficar ociosa. Para escrever, carregue a folha e coloque a caneta no suporte 1, sem lâminas.")
+            if(state.connecting || ble.scanning) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if(state.connecting) Text("Conectando e identificando a Cameo…")
+            ble.devices.sortedWith(compareByDescending<com.cameohandwrite.data.bluetooth.BleDiagnostics.Device> {it.address==s.preferredDevice}.thenByDescending {it.name.contains("cameo",true)}).forEach {device->
+                OutlinedButton(onClick={awaitingConnection=true;vm.connectPrinter(device.address)},enabled=!state.connecting,modifier=Modifier.fillMaxWidth()) {Text("${device.name}\n${device.address}")}
+            }
+            if(!state.connecting && !ble.scanning) TextButton(onClick={search()}) {Text("Buscar novamente")}
+            if(state.message.isNotBlank()) Text(state.message,style=MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(20.dp))
         }
     }
 }
-private fun java.io.Reader.readTextLimited():String { val b=CharArray(2000001);var n=0;while(n<b.size) {val read=read(b,n,b.size-n);if(read<0) break;n+=read};require(n<=2000000){"Arquivo muito grande"};return String(b,0,n) }
+private fun java.io.Reader.readLimited():String {val b=CharArray(2000001);var n=0;while(n<b.size) {val count=read(b,n,b.size-n);if(count<0) break;n+=count};require(n<=2000000){"Arquivo muito grande"};return String(b,0,n)}
 fun fmt(v:Double)=String.format(Locale.forLanguageTag("pt-BR"),"%.1f",v)
 @Composable fun SectionTitle(text:String) { Text(text,style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold) }
 @Composable fun <T> Choices(label:String,items:List<T>,selected:T,text:(T)->String,onSelect:(T)->Unit) {
@@ -233,22 +252,4 @@ fun fmt(v:Double)=String.format(Locale.forLanguageTag("pt-BR"),"%.1f",v)
     NumberField("Faixa reservada aos furos (mm)",p.holes) {onChange(p.copy(holes=it))}
     NumberField("Primeira pauta desde o topo (mm)",p.firstLine) {onChange(p.copy(firstLine=it))}
     NumberField("Distância entre pautas (mm)",p.lineSpacing) {onChange(p.copy(lineSpacing=it))}
-}
-@Composable fun Calibration(p:Paper,onChange:(Paper)->Unit,onTest:()->Unit,onSave:()->Unit) {
-    var step by remember { mutableIntStateOf(0) }
-    var measuredX by remember { mutableStateOf(0.0) };var measuredY by remember { mutableStateOf(0.0) }
-    SectionTitle("Assistente de calibração · ${step+1}/5")
-    Text(listOf("Posicione a folha na base; registre a origem e a orientação. O app não presume alinhamento perfeito das pautas.","Simule três cruzes nas pautas. Exporte o teste SVG para executar com um fluxo já validado. O app ainda não envia o teste físico.","Meça deslocamento: positivo se o traço saiu à direita ou abaixo do alvo. Se a inclinação variar entre os cantos, reposicione a folha.","Aplique a correção oposta ao erro medido, em passos de 0,1 mm. Confirme com novo teste.","Salve a calibração no perfil desta folha. Repita após trocar base, caneta ou carregamento.")[step])
-    NumberField("Calibração X (mm)",p.offsetX) {onChange(p.copy(offsetX=kotlin.math.round(it*10)/10))}
-    NumberField("Calibração Y (mm)",p.offsetY) {onChange(p.copy(offsetY=kotlin.math.round(it*10)/10))}
-    if(step==1) OutlinedButton(onClick=onTest) {Text("Simular teste de alinhamento")}
-    if(step==2 || step==3) {
-        NumberField("Erro medido X (mm)",measuredX) {measuredX=it}
-        NumberField("Erro medido Y (mm)",measuredY) {measuredY=it}
-        OutlinedButton(onClick={onChange(p.copy(offsetX=kotlin.math.round((p.offsetX-measuredX)*10)/10,offsetY=kotlin.math.round((p.offsetY-measuredY)*10)/10));measuredX=0.0;measuredY=0.0;step=3}) {Text("Aplicar correção")}
-    }
-    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick={step=(step-1).coerceAtLeast(0)},enabled=step>0) {Text("Voltar")}
-        Button(onClick={if(step==4) onSave() else step++}) {Text(if(step==4) "Salvar perfil" else "Próximo")}
-    }
 }

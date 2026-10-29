@@ -22,7 +22,7 @@ class EngineTest {
     @Test(expected=IllegalArgumentException::class) fun unknownCharacterIsNotSilentlyDropped() { engine.layout(Settings(text="Hello 🦊")) }
     @Test fun defaultDocumentAndEveryAsciiGlyphFitMargins() {
         val doc=engine.layout(Settings())
-        assertTrue(doc.pages.first().strokes.isNotEmpty())
+        assertTrue(doc.pages.first().strokes.isEmpty())
         val all=engine.layout(Settings(text=(33..126).map { it.toChar() }.joinToString(" ")))
         all.pages.flatMap { it.strokes }.flatten().forEach { assertTrue(it.x>=25 && it.x<=195 && it.y>=10 && it.y<=282) }
     }
@@ -95,5 +95,5 @@ class EngineTest {
     @Test(expected=IllegalArgumentException::class) fun rejectsInvalidMargins() { engine.layout(Settings(paper=Paper(left=200.0))) }
     @Test(expected=IllegalArgumentException::class) fun rejectsOversizedLetters() { engine.layout(Settings(letterHeight=10.0)) }
     @Test(expected=IllegalArgumentException::class) fun rejectsUnsafeCalibration() { engine.layout(Settings(paper=Paper(offsetY=-20.0))) }
-    @Test fun allFiveStylesGenerateRealPaths() { for(style in Style.entries) assertTrue(engine.layout(Settings(style=style)).pages.first().strokes.isNotEmpty()) }
+    @Test fun allFiveStylesGenerateRealPaths() { for(style in Style.entries) assertTrue(engine.layout(Settings(text="Olá ação 123",style=style)).pages.first().strokes.isNotEmpty()) }
 }

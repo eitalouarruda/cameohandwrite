@@ -2,6 +2,7 @@ package com.cameohandwrite.domain
 
 import java.text.Normalizer
 import kotlin.random.Random
+import kotlin.math.sin
 
 data class Glyph(val width: Double, val strokes: List<Stroke>)
 /** Hershey M/L data; no outline fonts, raster tracing or platform text rendering. */
@@ -49,14 +50,18 @@ class StrokeFontEngine(private val fonts: Map<String, Map<Char,Glyph>>) {
         return base.copy(strokes=base.strokes+marks)
     }
     fun render(char: Char, settings: Settings, random: Random): Glyph? {
-        val raw = glyph(char,settings.style) ?: return null
+        val messy=settings.style==Style.MESSY
+        val alternate=messy && settings.irregularity>0 && char.isLetter() && random.nextDouble()<0.3*settings.irregularity/100.0
+        val raw = (if(alternate) glyph(char,Style.CURSIVE) else null) ?: glyph(char,settings.style) ?: return null
         val amount=settings.irregularity.coerceIn(0,100)/100.0 * when(settings.style) { Style.MESSY -> 1.0; Style.UNEVEN -> 0.7; else -> 0.35 }
-        val width=1+random.nextDouble(-0.15,0.15)*amount
+        val width=1+random.nextDouble(if(messy) -0.24 else -0.15,if(messy) 0.24 else 0.15)*amount
         val height=1+random.nextDouble(-0.12,0.12)*amount
-        val shear=(if(settings.style==Style.PRINT) 0.0 else 0.06)+random.nextDouble(-0.2,0.2)*amount
+        val shear=(if(settings.style==Style.PRINT) 0.0 else 0.06)+random.nextDouble(if(messy) -0.38 else -0.2,if(messy) 0.38 else 0.2)*amount
         val dy=random.nextDouble(-0.7,0.7)*amount
         val scale=settings.letterHeight/21.0
-        val transformed=raw.strokes.map { s -> s.map { Pt((it.x*width-it.y*shear)*scale,(it.y*height+dy)*scale) } }
+        val phase=if(messy && amount>0) random.nextDouble(0.0,6.28) else 0.0
+        val bend=if(messy && amount>0) random.nextDouble(-1.0,1.0)*amount else 0.0
+        val transformed=raw.strokes.map { s -> s.map { Pt((it.x*width-it.y*shear+bend*(it.y/21.0)*(it.y/21.0)+(if(messy) sin(it.y*0.55+phase)*0.45*amount else 0.0))*scale,(it.y*height+dy+(if(messy) sin(it.x*0.4+phase)*0.25*amount else 0.0))*scale) } }
         val left=minOf(0.0,transformed.flatten().minOfOrNull { it.x } ?: 0.0)
         return Glyph(raw.width*width*scale-left,transformed.map { s -> s.map { Pt(it.x-left,it.y) } })
     }
