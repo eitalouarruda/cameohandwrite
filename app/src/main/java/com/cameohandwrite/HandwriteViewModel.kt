@@ -52,6 +52,9 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
         try { repository.saveProfile(mutable.value.settings.paper);mutable.value=mutable.value.copy(profiles=repository.profiles);update { it };message("Perfil salvo neste celular") }
         catch(e:Exception) { message(e.message ?: "Perfil inválido") }
     }
+    fun identifyDevice() { viewModelScope.launch {
+        try { ble.identify() } catch(e:Exception) { message("Identificação BLE falhou: ${e.message}") }
+    } }
     fun exportSettings()=repository.encode(mutable.value.settings)
     fun importSettings(raw:String) {
         try { val s=repository.decode(raw);layout.layout(s);mutable.value=mutable.value.copy(profiles=repository.profiles);update { s };message("Configurações importadas") }

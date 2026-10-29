@@ -57,6 +57,13 @@ class MainActivity:ComponentActivity() {
             if(p!=null) try { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(PlotPlanner.svg(p,s.paper)) } };vm.message("SVG da página ${currentPage+1} exportado") } catch(e:Exception) { vm.message("Falha ao exportar: ${e.message}") }
         }
     }
+    val exportAlignment=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/svg+xml")) { uri ->
+        if(uri!=null) scope.launch { try {
+            val test=PlotPlanner.alignment(s.paper)
+            withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(PlotPlanner.svg(test,s.paper)) } }
+            vm.message("Teste de alinhamento exportado; execute com um fluxo físico já validado")
+        } catch(e:Exception) { vm.message("Teste inválido: ${e.message}") } }
+    }
     val exportConfig=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if(uri!=null) scope.launch { try { val data=vm.exportSettings();withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(data) } };vm.message("Configurações exportadas") } catch(e:Exception) { vm.message("Falha: ${e.message}") } }
     }
@@ -108,6 +115,7 @@ class MainActivity:ComponentActivity() {
                         Button(onClick=vm::saveProfile) { Text("Salvar perfil de folha") }
                         state.profiles.forEach { profile -> OutlinedButton(onClick={vm.update { it.copy(paper=profile) }}) { Text("Usar ${profile.name}") } }
                         Calibration(s.paper,{p->vm.update { it.copy(paper=p) }},{ vm.simulate(currentPage,true);tab=3 },vm::saveProfile)
+                        OutlinedButton(onClick={exportAlignment.launch("cameo-calibracao.svg")},enabled=state.error==null && !state.busy) {Text("Exportar teste de alinhamento SVG")}
                     }
                     2 -> {
                         SectionTitle("Prévia física")
@@ -151,6 +159,11 @@ class MainActivity:ComponentActivity() {
                             permissions.launch(if(Build.VERSION.SDK_INT>=31) arrayOf(Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.BLUETOOTH_CONNECT) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
                         },enabled=!ble.scanning) { Text(if(ble.scanning) "Buscando…" else "Buscar dispositivos BLE") }
                         ble.devices.forEach { d -> OutlinedButton(onClick={vm.update { it.copy(preferredDevice=d.address) };vm.ble.connect(d.address)}) { Text("${d.name} · ${d.rssi} dBm\n${d.address}") } }
+                        if(ble.connected && ble.knownService) {
+                            Text("Identificação opcional: use somente com a máquina ociosa. O handshake reinicia o estado do protocolo (ESC EOT); não envia movimentos.",style=MaterialTheme.typography.bodySmall)
+                            OutlinedButton(onClick=vm::identifyDevice,enabled=!ble.identifying) { Text(if(ble.identifying) "Consultando…" else "Inicializar diagnóstico e consultar modelo") }
+                            if(ble.model.isNotBlank()) Text("Resposta FG: ${ble.model}")
+                        }
                         if(ble.connected) OutlinedButton(onClick=vm.ble::disconnect) { Text("Desconectar GATT") }
                         Text(ble.log,style=MaterialTheme.typography.bodySmall)
                         OutlinedButton(onClick={exportLogs.launch("cameo-diagnostico-ble.txt")}) { Text("Exportar diagnóstico BLE") }
