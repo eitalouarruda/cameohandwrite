@@ -128,7 +128,6 @@ class MainActivity:ComponentActivity() {
                     Text("Cameo Handwrite",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
                     Text("${BuildConfig.VERSION_NAME} · ${if(s.style==Style.MESSY) "Feia" else s.style.label} · ${s.quality.label}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)
                 }
-                TextButton(onClick={focus.clearFocus();keyboard?.hide();pendingPage=null;devicesOpen=true;search(if(!ready) s.preferredDevice.takeIf {it.isNotBlank()} else null)},enabled=!ble.testing && !state.connecting && !state.initializing) {Text(if(state.connecting) "Conectando…" else if(ready) "Conectada" else "Conectar")}
             }
             if(state.busy || state.connecting) LinearProgressIndicator(Modifier.fillMaxWidth())
             Column(Modifier.weight(1f).verticalScroll(remember(tab) {ScrollState(0)}).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -228,7 +227,7 @@ class MainActivity:ComponentActivity() {
                     Button(onClick={
                         focus.clearFocus();keyboard?.hide()
                         if(ready) vm.printPage(page) else {pendingPage=page;devicesOpen=true;search(s.preferredDevice.takeIf {it.isNotBlank()})}
-                    },enabled=s.text.isNotBlank() && current?.strokes?.isNotEmpty()==true && !state.busy && state.error==null && !ble.testing && !state.connecting,modifier=Modifier.fillMaxWidth().testTag("printPage")) {Text(if(ble.completedPage==page+1) "Escrever novamente a página ${page+1}" else "Escrever página ${page+1}")}
+                    },enabled=s.text.isNotBlank() && current?.strokes?.isNotEmpty()==true && !state.busy && state.error==null && !ble.testing && !state.connecting,modifier=Modifier.fillMaxWidth().testTag("printPage")) {Text(if(state.connecting) "Conectando…" else if(ble.completedPage==page+1) "Imprimir de novo" else "Imprimir")}
                 }
             }
             TabRow(selectedTabIndex=tab) {listOf("Texto","Folha","Ajustes").forEachIndexed {index,label->Tab(selected=tab==index,onClick={tab=index},enabled=!ble.testing && !state.connecting && !state.initializing,text={Text(label)})}}
