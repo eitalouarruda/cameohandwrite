@@ -4,13 +4,13 @@ import com.cameohandwrite.domain.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 
-data class HardwareStage(val title:String,val expected:String,val page:Page)
-data class HardwareSuite(val paper:Paper,val stages:List<HardwareStage>) {
+data class HardwareStage(val title:String,val expected:String,val page:Page,val speedOverride:Int?=null)
+data class HardwareSuite(val paper:Paper,val stages:List<HardwareStage>,val comparison:Boolean=false) {
     val preview get()=Page(stages.flatMap { it.page.strokes },0)
 }
 data class PenSetup(val force:Int=5,val speed:Int=5) {
     fun commands():List<ByteArray> {
-        require(force in 1..20 && speed in 1..10) { "Teste limitado a força 1–20 e velocidade 1–10 na escala GPGL" }
+        require(force in 1..20 && speed in 1..30) { "Teste limitado a força 1–20 e velocidade 1–30 na escala GPGL" }
         // Graphtec.py, SilhouetteCameoTool: holder 1, small force/speed, pen offset,
         // no corner sharpening. No depth, acceleration, origin reset or media commands.
         return listOf("J1","FX$force,1","!$speed,1","FC0,1,1","FE0,1","FF0,0,1").map { (it+Cameo5Driver.ETX).toByteArray(Charsets.US_ASCII) }
@@ -46,9 +46,22 @@ object CameoTestSuite {
         validate(suite)
         return suite
     }
+    /** Same glyphs and force, three independent baselines. Speeds 20/30 need visual evaluation. */
+    fun speedComparison(p:Paper,fonts:StrokeFontEngine):HardwareSuite {
+        p.validate()
+        val stages=listOf(10,20,30).mapIndexed { index,speed ->
+            val sample=Settings(text="Olá ação 123",paper=p.copy(firstLine=p.firstLine+index*2*p.lineSpacing),style=Style.SIMPLE,letterHeight=minOf(4.0,p.lineSpacing/1.8),irregularity=0)
+            val doc=PageLayoutEngine(fonts).layout(sample)
+            require(doc.pages.size==1 && doc.pages.single().lines==1) { "A comparação precisa caber na folha" }
+            val paths=doc.pages.single().strokes.map { s->s.map {Pt(it.x+3,it.y)} }
+            HardwareStage("${index+1}. Velocidade $speed","Olá ação 123 — compare tempo, acentos e legibilidade",Page(paths,1),speed)
+        }
+        return HardwareSuite(p,stages,comparison=true).also(::validate)
+    }
     fun validate(suite:HardwareSuite) {
         suite.paper.validate()
         require(suite.stages.size in 1..8)
+        require(suite.stages.all {it.speedOverride==null || it.speedOverride in 1..30})
         val points=suite.preview.strokes.flatten()
         require(points.isNotEmpty() && points.size<=5000) { "Bateria vazia ou excessiva" }
         points.forEach { point ->
@@ -82,17 +95,27 @@ object CameoTestSuite {
             }
         } }
         suspend fun send(bytes:ByteArray) { require(bytes.size<=CameoStrokeBlocks.MAX_BYTES);link.write(bytes);ready() }
-        suspend fun gate():Boolean {
-            while(paused() && !stop()) delay(50)
+        suspend fun gate(initial:Boolean=false):Boolean {
+            var waited=false
+            while(paused() && !stop()) {waited=true;delay(50)}
             if(stop()) return false
-            check(link.status()==Cameo5Driver.Status.READY) { "Máquina não está pronta" }
+            // The previous block already ended READY. Query again only on initial start/resume,
+            // where the operator may have changed the base or used the machine while paused.
+            if(initial || waited) check(link.status()==Cameo5Driver.Status.READY) { "Máquina não está pronta" }
             return !stop()
         }
-        if(!gate()) return false
+        if(!gate(initial=true)) return false
         onStage(-1,"Configurando suporte 1 para teste de caneta")
         send(setupCommands)
         val total=suite.stages.sumOf { it.page.strokes.size };var done=0
+        var activeSpeed=setup.speed
         for((index,stage) in suite.stages.withIndex()) {
+            if(!gate()) return false
+            val speed=stage.speedOverride ?: setup.speed
+            if(speed!=activeSpeed) {
+                send(("!$speed,1"+Cameo5Driver.ETX).toByteArray(Charsets.US_ASCII))
+                activeSpeed=speed
+            }
             onStage(index,stage.title)
             for(block in stageBlocks[index]) {
                 if(!gate()) return false
@@ -104,6 +127,7 @@ object CameoTestSuite {
             }
             onStage(index,stage.title+" · envio concluído; observação pendente")
         }
-        return true
+        if(activeSpeed!=setup.speed && !stop()) send(("!${setup.speed},1"+Cameo5Driver.ETX).toByteArray(Charsets.US_ASCII))
+        return !stop()
     }
 }

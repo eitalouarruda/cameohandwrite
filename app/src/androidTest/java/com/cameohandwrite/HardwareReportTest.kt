@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class HardwareReportTest {
     @Test fun reportRoundTripPreservesMeasurementsObservationsAndCommands() {
-        val r=HardwareTestReport("2026-10-29T00:00:00Z","CAMEO 5 V1.04",Paper(offsetX=-0.1),PenSetup(),listOf(StageReport("Escala","10 mm","Envio concluído","Problema")),outcome="Avaliação pendente",events=listOf("TX D400,600"),squareWidth="9,8",squareHeight="10",errorX="-0,1",notes="Não levantou no intervalo",elapsedMillis=1250,gattWrites=48,statusQueries=8,streamBlocks=4)
+        val r=HardwareTestReport("2026-10-29T00:00:00Z","CAMEO 5 V1.04",Paper(offsetX=-0.1),PenSetup(),listOf(StageReport("Escala","10 mm","Envio concluído","Problema",speed=20,elapsedMillis=1234)),outcome="Avaliação pendente",events=listOf("TX D400,600"),squareWidth="9,8",squareHeight="10",errorX="-0,1",notes="Não levantou no intervalo",elapsedMillis=1250,gattWrites=48,statusQueries=8,streamBlocks=4,comparison=true,gattWriteMillis=200,statusWaitMillis=300,streamBytes=1000)
         assertEquals(r,HardwareTestReport.decode(r.encode()))
         assertTrue(r.encode().contains("Não levantou"))
     }

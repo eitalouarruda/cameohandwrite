@@ -73,9 +73,9 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
             delay(300)
         }
     } }
-    fun suitePreview(paper:Paper=mutable.value.settings.paper):HardwareSuite=CameoTestSuite.build(paper,fontEngine)
-    fun runHardwareSuite(setup:PenSetup) { viewModelScope.launch {
-        try { ble.runSuite(suitePreview(),setup) } catch(e:CancellationException) { throw e } catch(e:Exception) { message("Bateria interrompida: ${e.message}") }
+    fun suitePreview(paper:Paper=mutable.value.settings.paper,comparison:Boolean=false):HardwareSuite=if(comparison) CameoTestSuite.speedComparison(paper,fontEngine) else CameoTestSuite.build(paper,fontEngine)
+    fun runHardwareSuite(setup:PenSetup,comparison:Boolean=false) { viewModelScope.launch {
+        try { ble.runSuite(suitePreview(comparison=comparison),setup) } catch(e:CancellationException) { throw e } catch(e:Exception) { message("Bateria interrompida: ${e.message}") }
     } }
     fun exportHardwareReport()=ble.report.value?.encode() ?: error("Execute uma bateria primeiro")
     fun hardwareReportSummary():String {
@@ -86,7 +86,10 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
             appendLine("Envio: ${r.sendMode}")
             r.elapsedMillis?.let { appendLine("Duração: ${it/1000.0} s; blocos=${r.streamBlocks}; consultas=${r.statusQueries}; escritas GATT=${r.gattWrites}") }
             appendLine("Força ${r.setup.force}; velocidade ${r.setup.speed} (escala GPGL)")
-            r.stages.forEach { appendLine("${it.title}: ${it.execution}; observação: ${it.observation}") }
+            appendLine("Dados de comandos: ${r.streamBytes} bytes; espera por ACK GATT=${r.gattWriteMillis/1000.0} s; consultas completas=${r.statusWaitMillis/1000.0} s (tempos sobrepostos)")
+            r.stages.forEach { s ->
+                appendLine("${s.title}: ${s.execution}; observação: ${s.observation}"+(s.speed?.let {"; velocidade=$it"} ?: "")+(s.elapsedMillis?.let {"; duração=${it/1000.0} s"} ?: ""))
+            }
             appendLine("Quadrado: largura=${r.squareWidth} mm; altura=${r.squareHeight} mm")
             appendLine("Erro medido: X=${r.errorX} mm; Y=${r.errorY} mm")
             appendLine("Notas: ${r.notes}")

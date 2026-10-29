@@ -33,6 +33,9 @@ class BleDiagnostics(private val context:Context) {
     private var suiteGattWrites=0
     private var suiteStatusQueries=0
     private var suiteStreamBlocks=0
+    private var suiteGattWriteMillis=0L
+    private var suiteStatusWaitMillis=0L
+    private var suiteStreamBytes=0
     fun restoreReport(report:HardwareTestReport?) { if(reportMutable.value==null) reportMutable.value=report }
     fun editReport(change:(HardwareTestReport)->HardwareTestReport) { if(!mutable.value.suiteRunning) reportMutable.update { it?.let(change) } }
     private val manager=context.getSystemService(BluetoothManager::class.java)
@@ -114,7 +117,10 @@ class BleDiagnostics(private val context:Context) {
     private suspend fun readStatus(g:BluetoothGatt,c:BluetoothGattCharacteristic):Cameo5Driver.Status {
         check(g===gatt && mutable.value.connected) { "Conexão interrompida" }
         if(recordingSuite) suiteStatusQueries++
-        val response=query(g,c,Cameo5Driver.statusQuery)
+        val statusStarted=android.os.SystemClock.elapsedRealtime()
+        val response=try { query(g,c,Cameo5Driver.statusQuery) } finally {
+            if(recordingSuite) suiteStatusWaitMillis+=android.os.SystemClock.elapsedRealtime()-statusStarted
+        }
         val status=Cameo5Driver.decodeStatus(response)
         val label=when(status) {
             Cameo5Driver.Status.READY -> "Pronta"
@@ -165,6 +171,8 @@ class BleDiagnostics(private val context:Context) {
         mutable.value=mutable.value.copy(testing=true,suiteRunning=true,suitePaused=false,suiteDone=0,suiteTotal=suite.stages.sumOf { it.page.strokes.size },suiteStage="Preparando",readyForProbe=false)
         val started=android.os.SystemClock.elapsedRealtime()
         suiteGattWrites=0;suiteStatusQueries=0;suiteStreamBlocks=0
+        suiteGattWriteMillis=0;suiteStatusWaitMillis=0;suiteStreamBytes=0
+        val stageStarted=mutableMapOf<Int,Long>()
         recordingSuite=true
         val priorityAccepted=try { g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) } catch(_:SecurityException) { false }
         log("Prioridade BLE alta solicitada: $priorityAccepted; intervalo real depende do Android/equipamento")
@@ -179,11 +187,16 @@ class BleDiagnostics(private val context:Context) {
                         check(g===gatt && mutable.value.connected && g===identifiedGatt) { "Conexão alterada durante bloco; não haverá repetição" }
                         writeConfirmed(g,c,fragment)
                     }
-                    suiteStreamBlocks++
+                    suiteStreamBlocks++;suiteStreamBytes+=command.size
                 }
             },stop={stopProbe},paused={mutable.value.suitePaused},onStage={index,title ->
                 mutable.value=mutable.value.copy(suiteStage=title)
-                if(index>=0) reportMutable.update { r -> r?.copy(stages=r.stages.mapIndexed { i,s -> if(i==index) s.copy(execution=if(title.contains("envio concluído")) "Envio concluído; observação pendente" else "Em execução") else s }) }
+                if(index>=0) {
+                    val finished=title.contains("envio concluído")
+                    if(!finished) stageStarted[index]=android.os.SystemClock.elapsedRealtime()
+                    val elapsed=if(finished) stageStarted[index]?.let {android.os.SystemClock.elapsedRealtime()-it} else null
+                    reportMutable.update { r -> r?.copy(stages=r.stages.mapIndexed { i,s -> if(i==index) s.copy(execution=if(finished) "Envio concluído; observação pendente" else "Em execução",elapsedMillis=elapsed) else s }) }
+                }
                 log("ETAPA: $title")
             },onStroke={done,total -> mutable.value=mutable.value.copy(suiteDone=done,suiteTotal=total) })
             val outcome=if(complete) "Envio concluído; avaliação física pendente" else "Interrompido pelo operador; próximos traços não enviados"
@@ -196,7 +209,7 @@ class BleDiagnostics(private val context:Context) {
         } finally {
             val elapsed=android.os.SystemClock.elapsedRealtime()-started
             log("Métricas: ${elapsed} ms; $suiteGattWrites escritas GATT; $suiteStatusQueries consultas; $suiteStreamBlocks blocos")
-            reportMutable.update { r -> r?.copy(elapsedMillis=elapsed,gattWrites=suiteGattWrites,statusQueries=suiteStatusQueries,streamBlocks=suiteStreamBlocks) }
+            reportMutable.update { r -> r?.copy(elapsedMillis=elapsed,gattWrites=suiteGattWrites,statusQueries=suiteStatusQueries,streamBlocks=suiteStreamBlocks,gattWriteMillis=suiteGattWriteMillis,statusWaitMillis=suiteStatusWaitMillis,streamBytes=suiteStreamBytes) }
             if(g===gatt && mutable.value.connected) {
                 try { g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_BALANCED) } catch(_:SecurityException) { }
             }
@@ -218,11 +231,12 @@ class BleDiagnostics(private val context:Context) {
         mutable.value=mutable.value.copy(model="",deviceStatus="",readyForProbe=false)
     }
     private suspend fun writeConfirmed(g:BluetoothGatt,c:BluetoothGattCharacteristic,bytes:ByteArray) {
+        val ackStarted=android.os.SystemClock.elapsedRealtime()
         operation("write:${c.uuid}") {
             if(Build.VERSION.SDK_INT>=33) g.writeCharacteristic(c,bytes,BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)==BluetoothStatusCodes.SUCCESS
             else { @Suppress("DEPRECATION") c.value=bytes;c.writeType=BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT; @Suppress("DEPRECATION") g.writeCharacteristic(c) }
         }
-        if(recordingSuite) suiteGattWrites++
+        if(recordingSuite) {suiteGattWrites++;suiteGattWriteMillis+=android.os.SystemClock.elapsedRealtime()-ackStarted}
         log("TX ${c.uuid}: "+bytes.joinToString(" ") { "%02x".format(it.toInt() and 255) })
     }
     private val stop=Runnable { stopScan() }

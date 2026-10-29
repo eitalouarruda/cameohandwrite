@@ -2,7 +2,7 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id(
 android {
     namespace = "com.cameohandwrite"
     compileSdk = 35
-    defaultConfig { applicationId = "com.cameohandwrite"; minSdk = 29; targetSdk = 35; versionCode = 4; versionName = "0.3.1"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    defaultConfig { applicationId = "com.cameohandwrite"; minSdk = 29; targetSdk = 35; versionCode = 5; versionName = "0.3.2"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
     System.getenv("CAMEO_DEBUG_KEYSTORE")?.let { keyPath ->
         signingConfigs.getByName("debug").storeFile = file(keyPath)
     }

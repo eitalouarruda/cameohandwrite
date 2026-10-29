@@ -16,16 +16,21 @@ import com.cameohandwrite.ui.PaperPreview
 @Composable fun HardwareSuiteControls(
     state:BleDiagnostics.State,suite:HardwareSuite?,error:String?,report:HardwareTestReport?,
     onRun:(PenSetup)->Unit,onPause:()->Unit,onStop:()->Unit,onExport:()->Unit,onCopy:()->Unit,
-    onReport:((HardwareTestReport)->HardwareTestReport)->Unit,onCalibrate:()->Unit
+    onReport:((HardwareTestReport)->HardwareTestReport)->Unit,onCalibrate:()->Unit,
+    comparing:Boolean=false,onMode:(Boolean)->Unit={}
 ) {
-    var prepared by remember(state.model,state.connected,state.suiteRunning,suite?.paper) { mutableStateOf(false) }
+    var prepared by remember(state.model,state.connected,state.suiteRunning,suite?.paper,suite?.comparison) { mutableStateOf(false) }
     var force by remember(report?.startedAt) { mutableIntStateOf(report?.setup?.force ?: 5) };var speed by remember(report?.startedAt) { mutableIntStateOf(report?.setup?.speed ?: 5) }
     val recognized=state.connected && Cameo5Driver.identifiesOriginalCameo5(state.model)
     val idle=!state.testing && !state.identifying && !state.queryingStatus
     Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Text("Bateria completa com caneta",style=MaterialTheme.typography.titleLarge)
         Text("Envio rápido: sem espera fixa em cada segmento; pausa ao final do bloco atual.",style=MaterialTheme.typography.bodySmall)
-        Text("Uma execução: traço de 5 mm, dois traços separados, quadrado de 10 mm, cruzes de alinhamento e Olá ação 123. Avalie tudo ao final; o relatório reúne os comandos e suas observações.")
+        Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            FilterChip(!comparing,{onMode(false)},enabled=idle,label={Text("Bateria completa")})
+            FilterChip(comparing,{onMode(true)},enabled=idle,label={Text("Comparar 10 / 20 / 30")})
+        }
+        Text(if(comparing) "Três linhas com a mesma frase e força: velocidades 10, 20 e 30. Compare tempo e legibilidade; 20/30 ainda são experimentais nesta máquina." else "Uma execução: traço de 5 mm, dois traços separados, quadrado de 10 mm, cruzes de alinhamento e Olá ação 123. Avalie tudo ao final; o relatório reúne os comandos e suas observações.")
         Text("Use papel de descarte preso à base, caneta no suporte 1 e suporte 2 vazio. Retire qualquer lâmina. Confira a altura do adaptador e a origem após carregar a base. A prévia usa o perfil da aba Folha e sua calibração.")
         suite?.let { PaperPreview(it.preview,it.paper,Modifier.fillMaxWidth().height(280.dp)) }
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
@@ -33,13 +38,13 @@ import com.cameohandwrite.ui.PaperPreview
         Text("Ajuste no mesmo APK se não marcar. Não há ajuste de profundidade de lâmina.",style=MaterialTheme.typography.bodySmall)
         Text("Força da caneta: $force")
         Slider(force.toFloat(),{force=it.toInt()},valueRange=1f..20f,steps=18,enabled=idle)
-        Text("Velocidade do teste: $speed")
-        Slider(speed.toFloat(),{speed=it.toInt()},valueRange=1f..10f,steps=8,enabled=idle)
+        Text(if(comparing) "Velocidades da comparação: 10 → 20 → 30" else "Velocidade do teste: $speed (acima de 10: experimental)")
+        if(!comparing) Slider(speed.toFloat(),{speed=it.toInt()},valueRange=1f..30f,steps=28,enabled=idle)
         Row(verticalAlignment=Alignment.CenterVertically) {
             Checkbox(prepared,{prepared=it},enabled=recognized && idle)
             Text("Caneta no suporte 1, sem lâminas, papel preso e origem/área da prévia conferidos",modifier=Modifier.weight(1f))
         }
-        Button(onClick={onRun(PenSetup(force,speed))},enabled=recognized && idle && state.readyForProbe && prepared && suite!=null) { Text("Executar bateria completa") }
+        Button(onClick={onRun(PenSetup(force,if(comparing) 10 else speed))},enabled=recognized && idle && state.readyForProbe && prepared && suite!=null) { Text(if(comparing) "Executar comparação 10 / 20 / 30" else "Executar bateria completa") }
         if(!recognized) Text("Conecte e consulte o modelo. Depois consulte o estado da Cameo.")
         if(state.suiteRunning) {
             Text(state.suiteStage)
@@ -58,6 +63,7 @@ import com.cameohandwrite.ui.PaperPreview
             Text("Perfil usado: ${r.paper.name}; ${r.model.trim()}")
             r.stages.forEachIndexed { index,s ->
                 Text(s.title+" — "+s.execution)
+                s.elapsedMillis?.let { Text("${s.speed ?: r.setup.speed} na escala GPGL · ${"%.3f".format(it/1000.0)} s") }
                 Text(s.expected,style=MaterialTheme.typography.bodySmall)
                 Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
                     listOf("Não avaliado","OK","Problema").forEach { value -> FilterChip(s.observation==value,{onReport { old -> old.copy(stages=old.stages.mapIndexed { i,stage -> if(i==index) stage.copy(observation=value) else stage }) }},enabled=!state.suiteRunning,label={Text(value)}) }

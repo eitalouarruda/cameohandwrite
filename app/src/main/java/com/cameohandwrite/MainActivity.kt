@@ -176,12 +176,14 @@ class MainActivity:ComponentActivity() {
                             OutlinedButton(onClick=vm::queryDeviceStatus,enabled=ble.model.isNotBlank() && !ble.identifying && !ble.queryingStatus && !ble.testing) {Text("Consultar estado")}
                             if(ble.deviceStatus.isNotBlank()) Text("Estado: ${ble.deviceStatus}")
                         }
+                        var compareSpeeds by remember {mutableStateOf(false)}
+                        val activeComparison=if(ble.suiteRunning) hardwareReport?.comparison ?: compareSpeeds else compareSpeeds
                         val suitePaper=if(ble.suiteRunning) hardwareReport?.paper ?: s.paper else s.paper
-                        val testPreview=remember(suitePaper) { runCatching { vm.suitePreview(suitePaper) } }
-                        HardwareSuiteControls(ble,testPreview.getOrNull(),testPreview.exceptionOrNull()?.message,hardwareReport,vm::runHardwareSuite,vm.ble::pauseSuite,vm.ble::stopMotionTest,
+                        val testPreview=remember(suitePaper,activeComparison) { runCatching { vm.suitePreview(suitePaper,activeComparison) } }
+                        HardwareSuiteControls(ble,testPreview.getOrNull(),testPreview.exceptionOrNull()?.message,hardwareReport,{setup ->vm.runHardwareSuite(setup,activeComparison)},vm.ble::pauseSuite,vm.ble::stopMotionTest,
                             onExport={exportHardwareReport.launch("cameo-bateria-completa.json")},
                             onCopy={ val clipboard=context.getSystemService(android.content.ClipboardManager::class.java);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Resultado Cameo",vm.hardwareReportSummary()));vm.message("Resumo copiado; cole na conversa se preferir") },
-                            onReport=vm.ble::editReport,onCalibrate=vm::applySuiteCalibration)
+                            onReport=vm.ble::editReport,onCalibrate=vm::applySuiteCalibration,comparing=activeComparison,onMode={compareSpeeds=it})
                         var showMotion by remember { mutableStateOf(false) }
                         OutlinedButton(onClick={showMotion=!showMotion},enabled=!ble.testing) { Text(if(showMotion) "Ocultar teste sem ferramenta" else "Mostrar teste anterior sem ferramenta") }
                         if(showMotion) MotionProbeControls(ble,vm::queryDeviceStatus,vm::testDeviceMotion,vm.ble::stopMotionTest)

@@ -46,7 +46,7 @@ class CameoTestSuiteTest {
     @Test fun sendsCompleteStrokeAndLiftsAtEndpoint() = runBlocking {
         val link=Link()
         assertTrue(CameoTestSuite.run(model,smallSuite(),PenSetup(),link,pollMillis=1))
-        assertEquals(listOf("M400,600\u0003","D400,700\u0003","D400,800\u0003","M400,800\u0003"),link.commands.drop(6))
+        assertEquals(listOf("M400,600\u0003","D400,800\u0003","M400,800\u0003"),link.commands.drop(6))
         assertTrue(link.sent.all {it.toByteArray().size<=512})
     }
     @Test fun stopDuringBlockFinishesPenUpBlockAndSendsNoNextStage() = runBlocking {
@@ -54,7 +54,7 @@ class CameoTestSuiteTest {
         link.onWrite={if(it.contains("D")) stop=true}
         val base=smallSuite();val suite=base.copy(stages=base.stages+base.stages)
         assertFalse(CameoTestSuite.run(model,suite,PenSetup(),link,stop={stop},pollMillis=1))
-        assertEquals(listOf("M400,600\u0003","D400,700\u0003","D400,800\u0003","M400,800\u0003"),link.commands.drop(6))
+        assertEquals(listOf("M400,600\u0003","D400,800\u0003","M400,800\u0003"),link.commands.drop(6))
         assertEquals(2,link.sent.size) // Setup + one bounded block; no guessed recovery or return.
     }
     @Test fun pauseHoldsBetweenBlocksWithPenUp() = runBlocking {
@@ -84,10 +84,35 @@ class CameoTestSuiteTest {
         val oldCommands=6+suite.preview.strokes.sumOf { it.size+1 }
         assertTrue("Status requests ${link.statusReads} vs old command count $oldCommands",link.statusReads*5<oldCommands)
         assertEquals(suite.preview.strokes.size,done)
-        val encoded=suite.stages.flatMap { Cameo5Driver.encode(it.page,suite.paper).toString(Charsets.US_ASCII).split(Cameo5Driver.ETX).filter { it.isNotEmpty() } }
-        assertEquals(encoded.filter {it.startsWith("D")},link.commands.filter {it.startsWith("D")}.map {it.trimEnd(Cameo5Driver.ETX)})
+        val encoded=suite.stages.fold(byteArrayOf()) {a,s->a+Cameo5Driver.encode(s.page,suite.paper)}
+        assertSameInk(encoded,link.commands.drop(6).joinToString("").toByteArray(Charsets.US_ASCII))
+        assertTrue(link.sent.sumOf {it.length}<encoded.size)
+        assertEquals(link.sent.size+1,link.statusReads) // One initial check, then readiness after each block.
+        println("COMPACT PERF: motion bytes before=${encoded.size}; total stream bytes now=${link.sent.sumOf {it.length}}")
         println("SAMPLE PERF: old mandatory waits=${oldCommands*100} ms; ready queries now=${link.statusReads}; stream blocks=${link.sent.size}; fixed waits now=0")
     }
+    @Test fun comparisonUsesIdenticalGlyphsAtThreeDocumentedSpeeds() = runBlocking {
+        val suite=CameoTestSuite.speedComparison(Paper(),fonts)
+        assertTrue(suite.comparison);assertEquals(listOf(10,20,30),suite.stages.map {it.speedOverride})
+        val first=suite.stages.first().page.strokes.flatten()
+        suite.stages.forEachIndexed { index,stage->
+            first.zip(stage.page.strokes.flatten()).forEach { (a,b)->assertEquals(a.x,b.x,0.00001);assertEquals(a.y+index*16,b.y,0.00001) }
+        }
+        val link=Link()
+        assertTrue(CameoTestSuite.run(model,suite,PenSetup(force=1,speed=10),link))
+        assertEquals(listOf("!10,1\u0003","!20,1\u0003","!30,1\u0003","!10,1\u0003"),link.commands.filter {it.startsWith("!")})
+        assertEquals(listOf("FX1,1\u0003"),link.commands.filter {it.startsWith("FX")})
+    }
+    @Test fun resumeChecksStateAgainBeforeSendingMoreInk() = runBlocking {
+        val link=Link();var paused=false
+        val base=smallSuite();val suite=base.copy(stages=base.stages+base.stages)
+        val job=async {runCatching {CameoTestSuite.run(model,suite,PenSetup(),link,paused={paused},onStroke={done,_->if(done==1) paused=true},pollMillis=1)}}
+        withTimeout(5000) {while(!paused) delay(1)}
+        val before=link.sent.size
+        link.statusValue=Cameo5Driver.Status.UNLOADED;paused=false
+        assertTrue(job.await().isFailure);assertEquals(before,link.sent.size)
+    }
+    @Test(expected=IllegalArgumentException::class) fun rejectsUndocumentedSpeedAboveThirty() {PenSetup(speed=31).commands()}
     @Test fun wrongModelSendsNothing() = runBlocking {
         val link=Link()
         try {CameoTestSuite.run("CAMEO 5 ALPHA",smallSuite(),PenSetup(),link);fail("model accepted")} catch(_:IllegalArgumentException) {}

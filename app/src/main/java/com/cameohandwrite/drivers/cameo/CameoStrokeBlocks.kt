@@ -7,39 +7,60 @@ import com.cameohandwrite.domain.Paper
 data class StrokeBlock(val bytes:ByteArray,val completedStrokes:Int)
 object CameoStrokeBlocks {
     const val MAX_BYTES=512 // Upstream safe_write permits 1024; keep a smaller motion queue.
+    private data class GridPoint(val y:Int,val x:Int) {
+        fun command(type:Char)="$type$y,$x"+Cameo5Driver.ETX
+    }
+    /** Only remove points that lie exactly on the directed line, at native 0.05-mm resolution.
+     * Preserve reversals, corners and isolated dots; no approximate curve simplification.
+     */
+    private fun compact(points:List<GridPoint>):List<GridPoint> {
+        val out=mutableListOf<GridPoint>()
+        for(p in points) {
+            if(out.lastOrNull()==p) continue
+            while(out.size>=2) {
+                val a=out[out.lastIndex-1];val b=out.last()
+                val cross=(b.x-a.x).toLong()*(p.y-a.y)-(b.y-a.y).toLong()*(p.x-a.x)
+                val between=(b.x-a.x).toLong()*(b.x-p.x)+(b.y-a.y).toLong()*(b.y-p.y)<=0
+                if(cross!=0L || !between) break
+                out.removeAt(out.lastIndex)
+            }
+            out.add(p)
+        }
+        return if(out.size==1) listOf(out.single(),out.single()) else out
+    }
     fun build(page:Page,paper:Paper,maxBytes:Int=MAX_BYTES):List<StrokeBlock> {
         require(maxBytes in 64..1024)
-        // Validate the entire page before any transmission, including calibration and margins.
-        Cameo5Driver.encode(page,paper)
-        val units=mutableListOf<StrokeBlock>()
-        for(stroke in page.strokes.filter { it.size>=2 }) {
-            val commands=Cameo5Driver.encode(Page(listOf(stroke),0),paper).toString(Charsets.US_ASCII)
-                .split(Cameo5Driver.ETX).filter { it.isNotEmpty() }.map { it+Cameo5Driver.ETX }
-            var start=commands.first()
-            var current=StringBuilder(start)
-            var lift=start
-            for(draw in commands.drop(1).dropLast(1)) {
-                val nextLift="M"+draw.drop(1)
-                if(current.length+draw.length+nextLift.length>maxBytes) {
-                    current.append(lift)
-                    units.add(StrokeBlock(current.toString().toByteArray(Charsets.US_ASCII),0))
-                    start=lift;current=StringBuilder(start)
-                }
-                require(current.length+draw.length+nextLift.length<=maxBytes)
-                current.append(draw);lift=nextLift
-            }
-            current.append(lift)
-            units.add(StrokeBlock(current.toString().toByteArray(Charsets.US_ASCII),1))
-        }
+        Cameo5Driver.encode(page,paper) // Validate every original point before transmission.
         val blocks=mutableListOf<StrokeBlock>()
-        var data=StringBuilder();var completed=0
+        var data=StringBuilder();var completed=0;var lift=""
         fun flush() {
-            if(data.isNotEmpty()) blocks.add(StrokeBlock(data.toString().toByteArray(Charsets.US_ASCII),completed))
-            data=StringBuilder();completed=0
+            if(data.isNotEmpty()) {
+                data.append(lift)
+                require(data.length<=maxBytes)
+                blocks.add(StrokeBlock(data.toString().toByteArray(Charsets.US_ASCII),completed))
+            }
+            data=StringBuilder();completed=0;lift=""
         }
-        for(unit in units) {
-            if(data.length+unit.bytes.size>maxBytes) flush()
-            data.append(unit.bytes.toString(Charsets.US_ASCII));completed+=unit.completedStrokes
+        for(stroke in page.strokes.filter {it.size>=2}) {
+            val commands=Cameo5Driver.encode(Page(listOf(stroke),0),paper).toString(Charsets.US_ASCII)
+                .split(Cameo5Driver.ETX).filter {it.isNotEmpty()}.dropLast(1)
+            val points=compact(commands.map { c->val pair=c.drop(1).split(',');GridPoint(pair[0].toInt(),pair[1].toInt()) })
+            val start=points.first().command('M')
+            val firstDraw=points[1].command('D');val firstLift=points[1].command('M')
+            if(data.length+start.length+firstDraw.length+firstLift.length>maxBytes) flush()
+            // This M raises the pen before moving to the next stroke: a preceding zero-travel M
+            // is unnecessary. Only block boundaries need an explicit lift at the last endpoint.
+            data.append(start);lift=start
+            for(point in points.drop(1)) {
+                val draw=point.command('D');val nextLift=point.command('M')
+                if(data.length+draw.length+nextLift.length>maxBytes) {
+                    val resume=lift
+                    flush();data.append(resume);lift=resume
+                }
+                require(data.length+draw.length+nextLift.length<=maxBytes)
+                data.append(draw);lift=nextLift
+            }
+            completed++
         }
         flush()
         return blocks

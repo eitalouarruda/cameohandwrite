@@ -13,8 +13,20 @@ class CameoStrokeBlocksTest {
         val blocks=CameoStrokeBlocks.build(page,paper)
         assertTrue(blocks.size<page.strokes.size)
         assertEquals(page.strokes.size,blocks.sumOf {it.completedStrokes})
-        assertEquals(commands(Cameo5Driver.encode(page,paper)),blocks.flatMap {commands(it.bytes)})
+        assertSameInk(Cameo5Driver.encode(page,paper),blocks.fold(byteArrayOf()) {a,b->a+b.bytes})
         blocks.forEach {assertTrue(it.bytes.size<=512);assertTrue(commands(it.bytes).first().startsWith("M"));assertTrue(commands(it.bytes).last().startsWith("M"))}
+    }
+    @Test fun removesOnlyZeroTravelLiftsAndExactlyCollinearVertices() {
+        val page=Page(listOf(listOf(Pt(30.0,20.0),Pt(31.0,20.0),Pt(31.0,20.0),Pt(32.0,20.0)),listOf(Pt(40.0,20.0),Pt(41.0,20.0))),1)
+        val data=CameoStrokeBlocks.build(page,paper).single().bytes
+        assertEquals(listOf("M400,600","D400,640","M400,800","D400,820","M400,820"),commands(data))
+        assertSameInk(Cameo5Driver.encode(page,paper),data)
+    }
+    @Test fun preservesReversalsCornersAndIsolatedDots() {
+        val page=Page(listOf(listOf(Pt(30.0,20.0),Pt(35.0,20.0),Pt(32.0,20.0),Pt(32.0,21.0)),listOf(Pt(40.0,20.0),Pt(40.0,20.0))),1)
+        val data=CameoStrokeBlocks.build(page,paper).single().bytes
+        assertEquals(listOf("D400,700","D400,640","D420,640","D400,800"),commands(data).filter {it.startsWith("D")})
+        assertSameInk(Cameo5Driver.encode(page,paper),data)
     }
     @Test fun longStrokeSplitsAtKnownEndpointsWithoutDroppingOrConnectingSegments() {
         val stroke=(0 until 500).map {i->Pt(30.0+i*0.1,20.0+(i%2))}
@@ -55,4 +67,43 @@ class CameoStrokeBlocksTest {
         try {CameoTestSuite.run("CAMEO 5 V1.04",suite,PenSetup(),link,pollMillis=1,timeoutMillis=20);fail("no timeout")} catch(_:TimeoutCancellationException) {}
         assertEquals(2,writes) // Setup + one motion block only.
     }
+}
+
+
+/** Independent geometric check: the union of directed native-grid line intervals must match.
+ * Detects gaps accidentally inked by removing M, as well as omissions, reversals and new lines.
+ */
+internal fun assertSameInk(reference:ByteArray,actual:ByteArray) {
+    data class P(val x:Int,val y:Int)
+    data class S(val a:P,val b:P)
+    fun segments(bytes:ByteArray):List<S> {
+        val out=mutableListOf<S>();var previous:P?=null
+        for(command in bytes.toString(Charsets.US_ASCII).split(Cameo5Driver.ETX).filter {it.isNotEmpty()}) {
+            val pair=command.drop(1).split(',');val p=P(pair[1].toInt(),pair[0].toInt())
+            if(command.first()=='D') out.add(S(previous!!,p))
+            previous=p
+        }
+        return out
+    }
+    fun cross(a:P,b:P,p:P)=(b.x-a.x).toLong()*(p.y-a.y)-(b.y-a.y).toLong()*(p.x-a.x)
+    fun contains(s:S,p:P)=cross(s.a,s.b,p)==0L && (p.x-s.a.x).toLong()*(p.x-s.b.x)+(p.y-s.a.y).toLong()*(p.y-s.b.y)<=0
+    fun covered(target:S,source:List<S>):Boolean {
+        if(target.a==target.b) return source.any {contains(it,target.a)}
+        val dx=target.b.x-target.a.x;val dy=target.b.y-target.a.y
+        val horizontal=dx!=0
+        fun project(p:P)=if(horizontal) p.x else p.y
+        val ranges=source.filter {s->cross(target.a,target.b,s.a)==0L && cross(target.a,target.b,s.b)==0L && dx.toLong()*(s.b.x-s.a.x)+dy.toLong()*(s.b.y-s.a.y)>0}
+            .map {s->minOf(project(s.a),project(s.b)) to maxOf(project(s.a),project(s.b))}.sortedBy {it.first}
+        var cursor=minOf(project(target.a),project(target.b));val end=maxOf(project(target.a),project(target.b))
+        for((a,b) in ranges) {
+            if(b<cursor) continue
+            if(a>cursor) return false
+            cursor=maxOf(cursor,b)
+            if(cursor>=end) return true
+        }
+        return false
+    }
+    val old=segments(reference);val optimized=segments(actual)
+    old.forEach {org.junit.Assert.assertTrue("Missing original ink segment $it",covered(it,optimized))}
+    optimized.forEach {org.junit.Assert.assertTrue("New or reversed ink segment $it",covered(it,old))}
 }
