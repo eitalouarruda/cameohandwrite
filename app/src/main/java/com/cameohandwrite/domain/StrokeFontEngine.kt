@@ -56,6 +56,8 @@ class StrokeFontEngine(private val fonts: Map<String, Map<Char,Glyph>>) {
         val shear=(if(settings.style==Style.PRINT) 0.0 else 0.06)+random.nextDouble(-0.2,0.2)*amount
         val dy=random.nextDouble(-0.7,0.7)*amount
         val scale=settings.letterHeight/21.0
-        return Glyph(raw.width*width*scale,raw.strokes.map { s -> s.map { Pt((it.x*width-it.y*shear)*scale,(it.y*height+dy)*scale) } })
+        val transformed=raw.strokes.map { s -> s.map { Pt((it.x*width-it.y*shear)*scale,(it.y*height+dy)*scale) } }
+        val left=minOf(0.0,transformed.flatten().minOfOrNull { it.x } ?: 0.0)
+        return Glyph(raw.width*width*scale-left,transformed.map { s -> s.map { Pt(it.x-left,it.y) } })
     }
 }

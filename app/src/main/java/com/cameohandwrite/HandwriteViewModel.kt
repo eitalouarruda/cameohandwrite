@@ -39,7 +39,10 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
         renderJob?.cancel();renderJob=viewModelScope.launch {
             delay(180)
             try {
-                val doc=withContext(Dispatchers.Default) { layout.layout(settings) }
+                val doc=withContext(Dispatchers.Default) {
+                    val raw=layout.layout(settings)
+                    raw.copy(pages=raw.pages.map { it.copy(strokes=PlotPlanner.plan(it,settings).strokes) })
+                }
                 mutable.value=mutable.value.copy(document=doc,error=null,busy=false)
             } catch(e:CancellationException) { throw e }
             catch(e:Exception) { mutable.value=mutable.value.copy(document=Document(emptyList()),error=e.message ?: "Layout inválido",busy=false) }
