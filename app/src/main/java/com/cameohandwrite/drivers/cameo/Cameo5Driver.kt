@@ -16,7 +16,7 @@ object Cameo5Driver {
     const val CONTROL_UUID = "61490654-b5b4-458c-a867-9e15bc1471e0"
     const val USB_VENDOR_ID = 0x0b4d
     const val USB_PRODUCT_ID = 0x1140
-    const val ETX: Char = u0003
+    const val ETX: Char = '\u0003'
     val firmwareQuery get() = byteArrayOf(0x46, 0x47, 0x03) // FG + ETX
     val statusQuery get() = byteArrayOf(0x1b, 0x05) // ESC ENQ, no ETX
 
@@ -40,19 +40,20 @@ object Cameo5Driver {
         val result = StringBuilder()
         fun command(letter: Char, x: Double, y: Double) {
             require(x.isFinite() && y.isFinite()) { "Coordenada não finita" }
-            require(x >= 0 && x <= paper.width && y >= 0 && y <= paper.height) {
-                "Trajeto fora da folha: $x,$y mm"
+            require(x >= paper.startX - 0.001 && x <= paper.width - paper.right + 0.001 &&
+                y >= paper.top && y <= paper.height - paper.bottom) {
+                "Trajeto fora da área útil: $x,$y mm"
             }
             // GPGL encodes Y first, then X, at 20 Silhouette units per millimeter.
-            result.append(letter).append((y * 20).roundToInt()).append(,)
+            result.append(letter).append((y * 20).roundToInt()).append(',')
                 .append((x * 20).roundToInt()).append(ETX)
         }
         for (stroke in page.strokes) {
             if (stroke.size < 2) continue
-            command(M, stroke.first().x, stroke.first().y)
-            for (point in stroke.drop(1)) command(D, point.x, point.y)
+            command('M', stroke.first().x, stroke.first().y)
+            for (point in stroke.drop(1)) command('D', point.x, point.y)
             // Explicitly raise at the final point, without a return-to-origin movement.
-            command(M, stroke.last().x, stroke.last().y)
+            command('M', stroke.last().x, stroke.last().y)
         }
         return result.toString().toByteArray(Charsets.US_ASCII)
     }
