@@ -32,7 +32,8 @@ import com.cameohandwrite.ui.PaperPreview
         }
         Text(if(comparing) "Três linhas com a mesma frase e força: velocidades 10, 20 e 30. Compare tempo e legibilidade; 20/30 ainda são experimentais nesta máquina." else "Uma execução: traço de 5 mm, dois traços separados, quadrado de 10 mm, cruzes de alinhamento e Olá ação 123. Avalie tudo ao final; o relatório reúne os comandos e suas observações.")
         Text("Use papel de descarte preso à base, caneta no suporte 1 e suporte 2 vazio. Retire qualquer lâmina. Confira a altura do adaptador e a origem após carregar a base. A prévia usa o perfil da aba Folha e sua calibração.")
-        suite?.let { PaperPreview(it.preview,it.paper,Modifier.fillMaxWidth().height(280.dp)) }
+        val preview=remember(suite) {suite?.preview}
+        if(suite!=null && preview!=null) PaperPreview(preview,suite.paper,Modifier.fillMaxWidth().height(280.dp))
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
         Text(if(comparing) "Comparação com força $force; velocidades 10 / 20 / 30" else "Força experimental: $force · velocidade: $speed (escala do equipamento, não mm/s)")
         Text("Ajuste no mesmo APK se não marcar. Não há ajuste de profundidade de lâmina.",style=MaterialTheme.typography.bodySmall)

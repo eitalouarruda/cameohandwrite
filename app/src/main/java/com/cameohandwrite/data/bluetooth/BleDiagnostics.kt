@@ -30,6 +30,8 @@ class BleDiagnostics(private val context:Context) {
     private val reportMutable=MutableStateFlow<HardwareTestReport?>(null)
     val report=reportMutable.asStateFlow()
     @Volatile private var recordingSuite=false
+    private val suiteJournal=ArrayDeque<String>()
+    private var logBuffer="Nenhum comando enviado"
     private var suiteGattWrites=0
     private var suiteStatusQueries=0
     private var suiteStreamBlocks=0
@@ -58,7 +60,7 @@ class BleDiagnostics(private val context:Context) {
     }
     private fun notification(g:BluetoothGatt,c:BluetoothGattCharacteristic,value:ByteArray) {
         if(g!==gatt) return
-        log("RX ${c.uuid}: "+value.joinToString(" ") { "%02x".format(it.toInt() and 255) })
+        log("RX ${c.uuid}: "+hex(value))
         if(c.uuid==readId && (mutable.value.identifying || mutable.value.testing || mutable.value.queryingStatus)) replies.trySend(value.copyOf())
     }
     /** Explicit opt-in only: this handshake resets protocol state. Never run during another job. */
@@ -173,7 +175,7 @@ class BleDiagnostics(private val context:Context) {
         suiteGattWrites=0;suiteStatusQueries=0;suiteStreamBlocks=0
         suiteGattWriteMillis=0;suiteStatusWaitMillis=0;suiteStreamBytes=0
         val stageStarted=mutableMapOf<Int,Long>()
-        recordingSuite=true
+        synchronized(this) {suiteJournal.clear();recordingSuite=true}
         val priorityAccepted=try { g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) } catch(_:SecurityException) { false }
         log("Prioridade BLE alta solicitada: $priorityAccepted; intervalo real depende do Android/equipamento")
         log("Envio em blocos de até 512 bytes, cada um finalizado com caneta levantada; ATT de 20 bytes com confirmação")
@@ -197,8 +199,8 @@ class BleDiagnostics(private val context:Context) {
                     val elapsed=if(finished) stageStarted[index]?.let {android.os.SystemClock.elapsedRealtime()-it} else null
                     reportMutable.update { r -> r?.copy(stages=r.stages.mapIndexed { i,s -> if(i==index) s.copy(execution=if(finished) "Envio concluído; observação pendente" else "Em execução",elapsedMillis=elapsed) else s }) }
                 }
-                log("ETAPA: $title")
-            },onStroke={done,total -> mutable.value=mutable.value.copy(suiteDone=done,suiteTotal=total) })
+                log("ETAPA: $title");flushSuiteLogs()
+            },onStroke={done,total -> mutable.value=mutable.value.copy(suiteDone=done,suiteTotal=total);flushSuiteLogs() })
             val outcome=if(complete) "Envio concluído; avaliação física pendente" else "Interrompido pelo operador; próximos traços não enviados"
             reportMutable.update { r -> r?.copy(outcome=outcome,stages=r.stages.map { if(it.execution=="Em execução") it.copy(execution="Parcial; interrompido") else it }) }
             log(outcome)
@@ -213,6 +215,7 @@ class BleDiagnostics(private val context:Context) {
             if(g===gatt && mutable.value.connected) {
                 try { g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_BALANCED) } catch(_:SecurityException) { }
             }
+            flushSuiteLogs()
             recordingSuite=false
             mutable.value=mutable.value.copy(testing=false,suiteRunning=false,suitePaused=false)
         }
@@ -237,13 +240,31 @@ class BleDiagnostics(private val context:Context) {
             else { @Suppress("DEPRECATION") c.value=bytes;c.writeType=BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT; @Suppress("DEPRECATION") g.writeCharacteristic(c) }
         }
         if(recordingSuite) {suiteGattWrites++;suiteGattWriteMillis+=android.os.SystemClock.elapsedRealtime()-ackStarted}
-        log("TX ${c.uuid}: "+bytes.joinToString(" ") { "%02x".format(it.toInt() and 255) })
+        log("TX ${c.uuid}: "+hex(bytes))
     }
     private val stop=Runnable { stopScan() }
+    private fun hex(bytes:ByteArray)=buildString(bytes.size*3) {
+        val digits="0123456789abcdef"
+        bytes.forEachIndexed { index,byte ->
+            if(index>0) append(' ')
+            val v=byte.toInt() and 255;append(digits[v ushr 4]);append(digits[v and 15])
+        }
+    }
     private fun log(message:String) { synchronized(this) {
         val line=Instant.now().toString()+" "+message
-        mutable.value=mutable.value.copy(log=(mutable.value.log+"\n"+line).takeLast(16000))
-        if(recordingSuite) reportMutable.update { r -> r?.copy(events=(r.events+line).takeLast(20000)) }
+        logBuffer=(logBuffer+"\n"+line).takeLast(16000)
+        if(recordingSuite) {
+            suiteJournal.addLast(line)
+            if(suiteJournal.size>20000) suiteJournal.removeFirst()
+        } else mutable.update {it.copy(log=logBuffer)}
+    } }
+    /** Publishing packet-by-packet rebuilt the Compose screen and copied the growing report.
+     * Retain every event, but publish only at stage/block boundaries and final completion.
+     */
+    private fun flushSuiteLogs() { synchronized(this) {
+        mutable.update {it.copy(log=logBuffer)}
+        val snapshot=suiteJournal.toList()
+        reportMutable.update {r->r?.copy(events=snapshot)}
     } }
     private val callback=object:ScanCallback() {
         override fun onScanResult(callbackType:Int,result:ScanResult) {
