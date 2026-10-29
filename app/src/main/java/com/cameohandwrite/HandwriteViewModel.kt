@@ -37,6 +37,7 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
     fun update(change:(Settings)->Settings) {
         if(ble.state.value.testing) {message("Aguarde o envio terminar para alterar a página");return}
         val next=change(mutable.value.settings)
+        if(next!=mutable.value.settings) ble.clearPrintStatus()
         simulator.cancel();simulationJob?.cancel()
         mutable.value=mutable.value.copy(settings=next,busy=true)
         rebuild(next)

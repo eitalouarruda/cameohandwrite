@@ -1,78 +1,46 @@
 # Cameo Handwrite
 
-Aplicativo Android 10+ em Kotlin/Compose para preparar escrita de traço único em folhas pautadas. Interface em português, offline, sem conta, backend ou permissão de internet.
+Android 10+ para colar texto e escrever com caneta na Silhouette Cameo 5, diretamente em folhas pautadas. Kotlin, Jetpack Compose, Material 3, MVVM e DataStore. Offline, sem conta, backend ou permissão de internet.
 
-**Status:** editor, layout, prévia, SVG, calibração, simulador e diagnóstico BLE/USB implementados. **A escrita de documentos pela Cameo 5 está bloqueada nesta versão; há testes experimentais de movimento e uma bateria completa com caneta.** O diagnóstico enviado pelo usuário confirmou handshake e identificação `CAMEO 5 V1.04` por BLE. O usuário confirmou o movimento real do carro com comandos M. Caneta, precisão, escrita e cancelamento físico ainda precisam de validação. Instalar o APK não implica suporte físico validado.
+## Usar
 
-## Instalar
+1. Instale o APK debug da execução mais recente de [Android APK](https://github.com/eitalouarruda/cameohandwrite/actions/workflows/android.yml), artifact `cameo-handwrite-debug`.
+2. Na tela **Texto**, cole ou digite o conteúdo. O app inicia em **Letra feia**, irregularidade 80% e perfil **Rápido**. Texto e perfil de folha anteriores são mantidos.
+3. Confira a prévia, que usa os mesmos trajetos da escrita. Use Anterior/Próxima se houver mais de uma página.
+4. Carregue a folha como no perfil, coloque a caneta no suporte 1 e retire lâminas. Toque **Escrever página**; se necessário, selecione a Cameo na lista. Conexão, identificação do modelo e consulta de estado são feitas automaticamente. Conecte apenas com a máquina ociosa: a identificação usa o handshake documentado que reinicia o protocolo.
+5. Ao terminar, confira a folha, troque o papel e selecione a próxima página. O app envia somente a página selecionada; não troca folhas nem repete automaticamente um trabalho parcial.
 
-1. Abra [Actions → Android APK](https://github.com/eitalouarruda/cameohandwrite/actions/workflows/android.yml).
-2. Escolha a execução mais recente com sucesso e baixe o artifact `cameo-handwrite-debug`.
-3. Extraia o ZIP e instale `app-debug.apk` no celular, permitindo instalação pelo aplicativo usado para abri-lo.
+**Pausar/Retomar** e **Cancelar envio** agem entre blocos limitados de 512 bytes, terminados com caneta levantada. Um comando já recebido pela Cameo não é abortado instantaneamente. Em falha de comunicação, confira a máquina/caneta e use outra folha antes de repetir. Deixe o app aberto; a tela é mantida acesa durante o envio.
 
-Android 10 (API 29) ou superior. Não precisa conectar a Cameo para editar, visualizar ou simular. APK debug, sem assinatura de release. Para atualizar builds debug de runners diferentes, pode ser necessário desinstalar a versão anterior; exporte suas configurações antes.
+## Interface
 
-## Uso
+- **Texto:** editor, prévia proporcional com zoom/pan, navegação por páginas e escrita. Não há botões de protocolo ou baterias de teste no fluxo principal.
+- **Folha:** perfis A4/A5/personalizados, primeira pauta, distância entre pautas; margens, furos e calibração X/Y de 0,1 mm ficam recolhidos.
+- **Ajustes:** fonte, tamanho, irregularidade e qualidade. **Opções avançadas** reúne alinhamento, espaço entre palavras, força/velocidade física, SVG/JSON, simulador e **Diagnóstico e testes**.
 
-- **Editor:** cole até 200 mil caracteres, escolha estilo, altura em mm, espaço entre palavras, alinhamento e irregularidade. Caracteres sem glifo bloqueiam o layout com aviso; não são descartados silenciosamente.
-- **Folha:** configure dimensões, margens, faixa dos furos, primeira pauta e distância entre pautas; salve perfis. Valores iniciais são exemplos, não medidas da sua folha. A contagem de pautas físicas pode exceder a de linhas usadas: o layout reserva espaço para descendentes na última pauta. Use os perfis A4/A5 ou um tamanho personalizado.
-- **Prévia:** navegue pelas páginas, arraste/amplie com dois dedos e veja a ordem colorida dos traços. Exporte cada página em SVG vetorial em milímetros. Linhas e furos aparecem apenas como referências na prévia.
-- **Escrita:** escolha Rápido/Normal/Caprichado, simplificação e velocidades para estimativa. Simule a página, pause, retome e cancele. O progresso representa traços simulados; não o estado da Cameo. O simulador é acelerado, não reproduz a duração estimada em tempo real.
-- **Calibração:** posicione a folha, exporte as cruzes de teste, execute o SVG por um fluxo físico já validado, meça erro X/Y e aplique a correção oposta. Salve o perfil. Passos de 0,1 mm; sem compensação automática de rotação ou distorção da folha.
-- **Ajustes:** exporte/importe configurações JSON com texto e perfis. Mesmo texto, semente e parâmetros geram a mesma geometria. As margens são nominais; a calibração translada a geometria uma vez, com validação final dentro da folha. Os arquivos exportados incluem o texto; compartilhe-os conscientemente.
+O padrão físico é força 1 e velocidade 10 na escala GPGL, usados nos testes do usuário. O perfil Rápido controla simplificação/planejamento de trajetos e não aumenta a velocidade física para 20/30 nem altera o transporte BLE. A preferência de abertura Feia/Rápido é reaplicada ao iniciar o app; outras escolhas continuam disponíveis durante o uso.
 
-A altura nominal corresponde à altura das maiúsculas; acentos e descendentes ocupam espaço adicional. Letras, pautas e calibração incompatíveis produzem erro, nunca recorte silencioso da escrita. O limite configurável de papel é 305 × 600 mm; isso não certifica a área mecânica da sua base/Cameo.
+## Folha, trajetos e fontes
 
-## Fontes e trajetos
+Coordenadas em milímetros, pautas existentes, margens, faixa dos furos e calibração por perfil. Os valores iniciais são exemplos. Linhas/furos são referências visuais e não são desenhados. O layout reserva espaço para descendentes; pautas físicas podem exceder as linhas utilizáveis. A prévia, SVG e plotagem usam a geometria planejada/calibrada, com resolução nativa de 0,05 mm no GPGL.
 
-Dados Hershey `scripts` e `futural`, convertidos em polilinhas M/L. Cinco estilos na interface: simples (script com variação leve), cursiva (script), forma (futural), irregular e feia (futural com transformações). Não são cinco famílias independentes. Sem TTF convertido em contorno, preenchimentos ou rasterização. As letras cursivas mantêm os levantamentos da fonte; não há promessa de palavras inteiras sem levantar a caneta.
+Fontes single-line Hershey `futural` e `scripts`, sem TTF convertido em contorno nem preenchimento. A letra feia combina formas existentes das duas famílias, inclinação/largura/altura e pequenas deformações determinísticas dos vértices, sem criar contornos duplos ou subdividir os traços. Mesmos texto, semente e parâmetros produzem os mesmos caminhos. Acentos portugueses/espanhóis, til, trema, cedilha e pontuação invertida são compostos geometricamente; caracteres ausentes bloqueiam o trabalho com aviso.
 
-Português/espanhol: composição NFD de agudo, grave, circunflexo, til, trema e cedilha sobre ASCII, incluindo maiúsculas. Pontuação invertida e aspas tipográficas têm fallback geométrico explícito. Outros alfabetos, emoji e marcas combinantes sem glifo não são suportados. Não há variantes alternativas de desenho por caractere.
+Licenças e atribuições em [licenses](licenses/), incluídas no APK. A nota Hershey preserva os créditos e a restrição ao formato NTIS; os TSV não usam esse formato.
 
-Variações determinísticas de inclinação, altura, largura e posição vertical, indexadas pela semente e paginação. O planejador simplifica por Douglas–Peucker, remove segmentos duplicados exatos e pode inverter o sentido de um traço para aproximar seu início, preservando a sequência das letras/palavras. A geometria planejada alimenta prévia, SVG e simulação. Não são usados atalhos que conectem letras atravessando espaços com a caneta abaixada.
+## Escrita real e limites
 
-Licenças e créditos em [licenses](licenses/), incluídos também no APK. A nota original Hershey preserva atribuições e a restrição ao formato NTIS; os arquivos TSV não usam esse formato.
+O usuário confirmou conexão BLE, identificação `CAMEO 5 V1.04`, movimento M, escrita D, levantamento e cinco padrões com caneta, usando força 1 e velocidade 10. A comparação 10/20/30 não trouxe ganho: a maior parte do tempo medido estava nos ACKs BLE. A otimização de MTU foi interrompida a pedido do usuário; a versão 0.4.0 preserva o transporte validado de 20 bytes confirmados e blocos de 512 bytes.
 
-## Cameo 5: o que está implementado
+**Páginas completas do editor estão habilitadas por software, mas sua impressão física ainda precisa ser confirmada pelo usuário.** Escala e alinhamento anteriores foram marcados como OK sem medidas de régua; não constituem calibração quantitativa. Confira sua folha/base antes de textos longos. Limites configuráveis de papel de 305 × 600 mm não certificam a área mecânica da sua base.
 
-- Busca BLE real com permissões Android 10/11 e 12+, seleção, conexão GATT, descoberta de serviços/características, desconexão e logs exportáveis.
-- Comparação com UUIDs publicados no upstream, sem inferir protocolo a partir de qualquer característica gravável.
-- Consulta opcional de identificação: assina notificações de controle/resposta, usa handshake documentado `ESC EOT` e consulta `FG`. **Use somente com a máquina ociosa:** o handshake reinicia o estado do protocolo. Sem comandos de movimento.
-- Inspeção USB OTG real de dispositivos, interfaces e endpoints; identificação do VID/PID documentado. Sem permissão ou transmissão bulk nesta versão.
-- Driver de serialização GPGL: Y,X em 20 unidades/mm, M/D, ETX, limites físicos e blocos de até 1024 bytes preservando comandos. Separado do layout e dos diagnósticos.
-- Contrato `PlotterTransport` e transporte gravador para verificação offline.
+Validação antes de enviar: modelo Cameo 5 original, folha/margens/coordenadas finitas, página não vazia, até 200 mil pontos por página, estado pronto e comandos GPGL documentados. Papel descarregado antes de começar recusa o trabalho sem desenhar; a conexão é mantida para carregar a folha e tentar novamente. Não há recuperação automática de movimento incerto. USB OTG continua como diagnóstico, sem escrita bulk.
 
-Não implementados/liberados: transmissão física de trabalhos de texto BLE/USB, configuração de ferramenta/pressão, controle físico de velocidades, pausa/cancelamento da Cameo, pareamento forçado ou reconexão/retomada automática de trabalho. Uma desconexão não prova que o equipamento parou; jamais reenviar automaticamente um trabalho parcial.
-
-[Pesquisa e fontes fixadas do protocolo](docs/PROTOCOL.md). O upstream relata teste com Cameo **5 Alpha**; não foi tratado como teste da Cameo 5 original nem deste APK. A ausência de acesso ao equipamento não impede testar todo o fluxo offline.
-
-## Teste mínimo de movimento (0.2.0)
-
-1. Retire caneta e lâminas dos dois suportes; carregue a base na máquina ociosa. Recarregue se a origem tiver sido alterada.
-2. Em **Escrita**, conecte à Cameo 5 e use **Inicializar diagnóstico e consultar modelo**.
-3. Use **Consultar estado da Cameo**; o teste só é liberado com estado **Pronta**.
-4. Confirme os três itens sobre ferramentas, base e origem. Use **Testar movimento de 1 mm sem ferramenta**.
-5. Observe o carro e exporte o diagnóstico BLE, informando se houve movimento real.
-
-Comandos fixos `M20,20`, `M20,40`, `M20,20`, terminados em ETX, na ordem Y,X a 20 unidades/mm: pontos absolutos (1,1) → (2,1) → (1,1) mm em relação à origem carregada. Não são deslocamentos relativos à posição atual, e o limite de 2 mm nas coordenadas não garante deslocamento inicial pequeno se a origem/carro estiverem em outra posição. Sem comandos D, força, velocidade ou seleção de ferramenta. No teste sem ferramenta, um comando por vez, com consulta de estado antes/depois e timeout; sem repetição automática. Recusa modelo diferente, base descarregada, ocupado ou estado desconhecido.
-
-**Interromper próximas etapas** apenas impede novos movimentos; não aborta um comando já aceito e não envia retorno automático. Em falha/timeout a sessão é encerrada. Para repetir, desconecte e identifique novamente após conferir a base. O estado pronto e confirmações GATT não comprovam que o carro se moveu: essa confirmação depende de observação física. Escrita com caneta e textos inteiros continuam bloqueados.
-
-## Bateria única de testes com caneta (0.3.0)
-
-O aplicativo executa cinco padrões em uma única sessão: traço de 5 mm; dois traços com intervalo para verificar levantamento; quadrado de 10 mm; cruzes para alinhamento; amostra single-line **Olá ação 123**. A prévia usa exatamente os mesmos trajetos calibrados, no perfil atual de folha. Os padrões ficam dentro de uma área máxima de 85 × 110 mm, validada contra folha e margens. A primeira pauta ancora o primeiro traço; as cruzes e amostra ficam em pautas posteriores. Se a bateria não couber, o app recusa o envio.
-
-1. Use papel de descarte preso à base e caneta corretamente ajustada no **suporte 1**; suporte 2 vazio, sem lâminas. Confira origem e área mostrada na prévia.
-2. Em Escrita, conecte, consulte modelo e estado; com estado Pronta, confirme a preparação e use **Executar bateria completa**.
-3. Aguarde a bateria ou pause/interrompa. O app levanta a caneta no último ponto confirmado antes de honrar uma pausa/interrupção normal. Em timeout/desconexão ele não tenta comandos de recuperação nem repete desenhos: a caneta pode continuar baixada; confira a máquina.
-4. Avalie cada padrão como OK ou Problema, preencha medidas do quadrado, erro X/Y e observações. Use **Copiar resumo** para colar o resultado na conversa ou **Exportar relatório único** para enviar um único JSON com etapas, configuração, observações e comunicação.
-5. Aplique a correção X/Y no próprio app e repita a bateria com outra folha, sem outro APK. O último relatório é salvo periodicamente e recuperado após fechar o app. Exporte-o antes de iniciar outra bateria ou desinstalar o aplicativo.
-
-Configuração de caneta experimental, a partir de `SilhouetteCameoTool` no upstream fixado: `J1`, `FXforça,1`, `!velocidade,1`, `FC0,1,1`, `FE0,1`, `FF0,0,1`, todos com ETX. Força limitada a 1–20 e velocidade a 1–10 na escala GPGL, inicialmente 5; não são mm/s nem pressão em unidade física. Não envia profundidade de lâmina, aceleração ou reset da origem. Uma resposta pronta não certifica contato/levantamento: informe a observação física no relatório. O app não marca testes como OK automaticamente e não habilita documentos completos só por concluir o envio.
+[Pesquisa, fontes fixadas e evidências físicas](docs/PROTOCOL.md). Baterias, comparação de velocidades, teste sem ferramenta, logs e relatório único permanecem em Ajustes → Opções avançadas → Diagnóstico e testes.
 
 ## Arquitetura e build
 
-`MainActivity`/Compose → `HandwriteViewModel` → `StrokeFontEngine` → `PageLayoutEngine` → `PlotPlanner`; DataStore para persistência. Diagnósticos BLE/USB e driver GPGL ficam separados do motor geométrico. Trabalhos de layout executam em dispatcher de CPU com debounce; persistência é automática.
+`MainActivity` → `HandwriteViewModel` → `StrokeFontEngine` → `PageLayoutEngine` → `PlotPlanner` → `CameoPageJob` → `CameoJobRunner` → BLE. O runner é compartilhado com a bateria anterior, sem mudar o protocolo. Perfis/texto/configurações ficam no DataStore; o último relatório técnico fica em arquivo atômico local.
 
 JDK 17 e Android SDK 35:
 
@@ -80,28 +48,6 @@ JDK 17 e Android SDK 35:
 ./gradlew testDebugUnitTest assembleDebug lintDebug
 ```
 
-APK: `app/build/outputs/apk/debug/app-debug.apk`. Workflow em `.github/workflows/android.yml` roda em pushes na `main` e manualmente; publica APK e relatórios. Gradle Wrapper 8.11.1 versionado com SHA-256 da distribuição. Nenhuma chave ou segredo no repositório.
+APK: `app/build/outputs/apk/debug/app-debug.apk`. Wrapper Gradle 8.11.1 versionado com SHA-256. Workflow em pushes na main e manualmente; publica APK e relatórios. A chave debug de teste é reutilizada pelo cache do Actions para atualizar sobre 0.3.0+ sem desinstalar enquanto o cache estiver preservado. Nenhum segredo/chave é incluído no repositório.
 
-Testes cobrem glifos reais, acentos, fallback ausente, escala em mm, margens, quebras/páginas, alinhamentos, calibração, irregularidade determinística, simplificação, duplicatas, limites e serialização/fracionamento GPGL. Isso não substitui testes no Android nem na Cameo.
-
-## Validação física pendente
-
-1. Instalar no celular e testar busca/conexão; exportar diagnóstico com o equipamento ocioso.
-2. Comparar modelo, firmware e UUIDs reais; distinguir Cameo 5 original, Plus e Alpha.
-3. Validar levantamento da caneta e origem com base carregada; começar sem caneta e movimentos mínimos em papel descartável.
-4. Medir deslocamento e inclinação em vários pontos; ajustar folha e perfil.
-5. Validar fluxo/status, velocidades reais, desconexão, mídia descarregada, pausa e parada antes de habilitar transmissão de texto longo.
-
-
-### Envio rápido (0.3.1)
-
-A bateria agora agrupa trajetos em blocos de até 512 bytes, transmitidos por BLE em fragmentos de até 20 bytes com confirmação. A espera fixa de 100 ms após cada pequeno segmento foi removida: o estado é consultado entre blocos, com polling de 50 ms somente enquanto houver movimento. A geometria e a sequência dos segmentos são preservadas. A solicitação de pausa/interrupção aguarda o bloco atual, que termina em caneta levantada; não é uma parada física instantânea. Não há repetição de envio incerto.
-
-O resumo inclui duração total, número de blocos, escritas GATT e consultas. Os parâmetros de força/velocidade da última bateria são recuperados no formulário. O retorno físico positivo com força 1 e velocidade 10 refere-se à 0.3.0; o envio otimizado ainda precisa de comparação na máquina. Não é prometido um multiplicador de velocidade sem medição. A atualização deve preservar dados e instalar sobre a 0.3.0 se a chave debug em cache do Actions tiver sido mantida.
-
-
-### Compactação e comparação de velocidades (0.3.2)
-
-Mantém os pacotes BLE confirmados de 20 bytes e o limite de 512 bytes por bloco. Retira consultas duplicadas de prontidão, levantamentos M sem deslocamento que o próximo M já substitui, pontos duplicados e vértices exatamente colineares na grade nativa. Preserva o desenho, a ordem de escrita, reversões, cantos e pontos de pontuação; todo bloco termina com caneta levantada. Consulta o estado no início, ao concluir cada bloco e novamente após pausa. Não faz simplificação aproximada nem assume um MTU maior.
-
-Em Escrita, escolha **Comparar 10 / 20 / 30** para executar a mesma frase em três linhas com força constante e tempo individual. Selecione a velocidade mais rápida que continue legível. A faixa 1–30 existe no comando de velocidade do upstream para Cameo 5; valores acima de 10 ainda precisam de avaliação física do usuário. A comparação começa e, se concluída, termina com a configuração 10. Também é possível repetir a bateria completa com uma velocidade escolhida até 30, sem trocar APK. O relatório único mantém avaliações e inclui bytes, esperas por ACK, consultas e tempos por linha. Métricas de ACK e de consultas se sobrepõem; o app não as soma para inferir tempo mecânico.
+Testes cobrem glifos/acentos, irregularidade determinística, layout/paginação, margens/calibração, SVG, simplificação, equivalência da tinta na grade nativa, blocos/ACKs sem repetição, escolha de página e envio do texto real do editor. Testes em emulador cobrem a interface simplificada, persistência e relatórios. Esses testes não substituem a observação da página inteira na Cameo física.

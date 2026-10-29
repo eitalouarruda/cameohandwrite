@@ -95,3 +95,10 @@ O relatório acrescenta tempo por etapa, velocidade efetiva da etapa, bytes de c
 
 
 O log de cada pacote continua sendo mantido em memória, mas atualizações de Compose/relatório são publicadas nas fronteiras de bloco/etapa e ao encerrar, em vez de copiar o relatório crescente e reconstruir a tela a cada pacote. O último bloco em andamento pode não estar no relatório persistido se o processo for encerrado abruptamente; a execução recuperada permanece interrompida, sem retomada automática. Em término normal ou falha capturada, o journal é descarregado no relatório antes de salvar as métricas finais.
+
+
+## Página do editor e interface 0.4.0
+
+O pedido de otimizar MTU foi cancelado antes de alterações no código: o transporte permanece o da 0.3.2. O usuário pediu simplificação e escrita de texto próprio. A nova interface inicia em Feia/Rápido, oculta diagnósticos, conecta/identifica automaticamente após escolha da Cameo ociosa e envia a página selecionada do documento planejado. O runner de blocos foi extraído sem mudar o envio de ACK/GPGL; a bateria mantém seu limite pequeno, e `CameoPageJob` valida separadamente o papel completo, margens, finitude, até 200 mil pontos e número de página antes de enviar.
+
+Não há envio automático de outras páginas ou repetição de trabalho parcial. Cada próxima folha requer seleção/ação do usuário. Um estado conhecido de mídia descarregada/ocupado antes de começar não envia comandos de ferramenta ou movimento, mantendo a conexão para correção. Estado desconhecido, falha ou timeout continuam encerrando a sessão. A escrita completa em papel deve ser observada pelo usuário antes de ser declarada fisicamente validada.

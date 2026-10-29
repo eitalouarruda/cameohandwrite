@@ -10,7 +10,7 @@ object CameoPageJob {
         require(number in 1..totalPages) { "Página inválida" }
         paper.validate()
         require(page.strokes.isNotEmpty() && page.strokes.all {it.size>=2}) { "Esta página não tem escrita" }
-        require(page.strokes.sumOf {it.size}<=200000) { "Página densa demais; aumente a letra ou divida o texto" }
+        require(page.strokes.sumOf {it.size.toLong()}<=200000L) { "Página densa demais; aumente a letra ou divida o texto" }
         Cameo5Driver.encode(page,paper) // Includes final physical/calibrated bounds and finite checks.
         return PagePrintJob(paper,page.copy(strokes=page.strokes.map {it.toList()}),number,totalPages)
     }

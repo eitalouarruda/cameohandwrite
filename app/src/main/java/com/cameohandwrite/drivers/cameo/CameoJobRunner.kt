@@ -18,7 +18,7 @@ object CameoJobRunner {
         require(Cameo5Driver.identifiesOriginalCameo5(model)) { "Identifique uma Cameo 5 original" }
         paper.validate()
         require(stages.isNotEmpty() && stages.all {it.speedOverride==null || it.speedOverride in 1..30})
-        require(stages.sumOf {it.page.strokes.sumOf {stroke->stroke.size}}<=200000) { "Página densa demais; aumente a letra ou divida o texto" }
+        require(stages.sumOf {it.page.strokes.sumOf {stroke->stroke.size.toLong()}}<=200000L) { "Página densa demais; aumente a letra ou divida o texto" }
         stages.forEach {Cameo5Driver.encode(it.page,paper)}
         val setupCommands=setup.commands().fold(byteArrayOf()) { a,b->a+b }
         // Compile and validate all blocks before configuring or moving the machine.

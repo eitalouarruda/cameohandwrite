@@ -39,7 +39,7 @@ class BleDiagnostics(private val context:Context) {
     private var suiteStatusWaitMillis=0L
     private var suiteStreamBytes=0
     fun restoreReport(report:HardwareTestReport?) { if(reportMutable.value==null) reportMutable.value=report }
-    fun editReport(change:(HardwareTestReport)->HardwareTestReport) { if(!mutable.value.suiteRunning) reportMutable.update { it?.let(change) } }
+    fun editReport(change:(HardwareTestReport)->HardwareTestReport) { if(!mutable.value.testing) reportMutable.update { it?.let(change) } }
     private val manager=context.getSystemService(BluetoothManager::class.java)
     private val handler=Handler(Looper.getMainLooper())
     @Volatile private var gatt:BluetoothGatt?=null
@@ -244,6 +244,9 @@ class BleDiagnostics(private val context:Context) {
         stopProbe=true
         log("Solicitada interrupção das próximas etapas; isso não aborta o comando já recebido pela Cameo")
         mutable.value=mutable.value.copy(testMessage=if(mutable.value.suiteRunning || mutable.value.printingPage) "Parando envio após o bloco atual; aguarde a máquina" else "Parando envio após o comando atual; aguarde a máquina")
+    }
+    fun clearPrintStatus() {
+        if(!mutable.value.testing) mutable.update {it.copy(completedPage=null,printMessage="",pageNumber=null)}
     }
     private fun invalidateSession() {
         identifiedGatt=null
