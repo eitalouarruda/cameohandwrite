@@ -1,6 +1,6 @@
 # Cameo Handwrite para Linux
 
-Execute `./desktop/run.sh` na pasta do projeto. A primeira execução instala PySide6 e Bleak em um ambiente local; depois funciona offline.
+Execute `./dev.sh` na pasta do projeto. A primeira execução instala PySide6 e Bleak em um ambiente local; depois funciona offline.
 
 Cole o texto, confira a prévia e pressione **Imprimir**. Deixe uma única Cameo 5 ligada e visível por Bluetooth. Carregue a folha A4 alinhada à origem e use caneta no suporte 1, sem lâminas. A identificação do modelo e o estado carregado são verificados antes de escrever.
 
