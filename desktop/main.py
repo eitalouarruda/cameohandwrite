@@ -9,16 +9,22 @@ STORE = Path.home() / '.local/share/cameohandwrite/linux-job.json'
 WRITE = '6d92661d-f429-4d67-929b-28e7a9780912'
 READ = '8dcf199a-30e7-4bd4-beb6-beb57dca866c'
 CONTROL = '61490654-b5b4-458c-a867-9e15bc1471e0'
-FONTS = {}
-for line in (ROOT / 'app/src/main/assets/futural.tsv').read_text().splitlines():
-    c, w, path = line.split('\t')
-    paths = []
-    for segment in path.split('M')[1:]:
-        nums = list(map(float, re.findall(r'-?\d+(?:\.\d+)?', segment)))
-        paths.append(list(zip(nums[::2], nums[1::2])))
-    FONTS[chr(int(c))] = (float(w), paths)
+def load_font(name):
+    font = {}
+    for line in (ROOT / f'app/src/main/assets/{name}.tsv').read_text().splitlines():
+        c, w, path = line.split('\t'); paths = []
+        for segment in path.split('M')[1:]:
+            nums = list(map(float, re.findall(r'-?\d+(?:\.\d+)?', segment)))
+            paths.append(list(zip(nums[::2], nums[1::2])))
+        font[chr(int(c))] = (float(w), paths)
+    return font
 
-def layout(text):
+FONTS = load_font('futural')
+CURSIVE = load_font('scripts')
+STYLES = ('Muito feia', 'Feia', 'Cursiva', 'Anterior')
+
+def layout(text, style="Muito feia"):
+    if style not in STYLES: raise ValueError("Fonte desconhecida")
     pages = [[]]; x = 25.; y = 20.; rng = random.Random(517)
     marks = {'́': [(-2,-3),(2,-7)], '̀': [(-2,-7),(2,-3)],
              '̂': [(-3,-3),(0,-7),(3,-3)], '̃': [(-4,-4),(-2,-6),(2,-3),(4,-5)],
@@ -29,15 +35,26 @@ def layout(text):
         for c in word:
             n = unicodedata.normalize('NFD', c)
             if n[0] not in FONTS: raise ValueError('Caractere ausente: ' + c)
-            w, paths = FONTS[n[0]]; paths = [list(p) for p in paths]
+            font = CURSIVE if style == 'Cursiva' or (style in ('Feia', 'Muito feia') and rng.random() < .35) else FONTS
+            w, paths = font.get(n[0], FONTS[n[0]]); paths = [list(p) for p in paths]
             if len(n) > 1:
                 if len(n) != 2 or n[1] not in marks: raise ValueError('Acento ausente: ' + c)
                 paths.append([(w/2+a,b) for a,b in marks[n[1]]])
                 if n[1] == '̈': paths.append([(w/2+3,-5),(w/2+4,-5)])
             sx = rng.uniform(.85,1.15); shear = rng.uniform(-.25,.25)
-            transformed = [[((a*sx-(b-22)*shear)*4/21,(b-22)*4/21) for a,b in p] for p in paths]
+            amount = 1.0 if style == 'Muito feia' else .55 if style == 'Feia' else 0.
+            sy = 1.; dy = 0.; bend = 0.
+            if amount:
+                sx += rng.uniform(-.16,.16)*amount
+                shear += rng.uniform(-.35,.35)*amount
+                sy += rng.uniform(-.22,.22)*amount
+                dy = rng.uniform(-.9,.9)*amount
+                bend = rng.uniform(-1.8,1.8)*amount
+            transformed = [[((a*sx-(b-22)*shear+bend*((b-22)/21)**2)*4/21,
+                              ((b-22)*sy+dy)*4/21) for a,b in p] for p in paths]
             left = min([0.] + [a for p in transformed for a,b in p])
-            glyphs.append((w*sx*4/21-left, [[(a-left,b) for a,b in p] for p in transformed]))
+            advance = w*sx*4/21 if style == 'Anterior' else max(w*sx*4/21, max([0.] + [a for p in transformed for a,b in p]))
+            glyphs.append((advance-left, [[(a-left,b) for a,b in p] for p in transformed]))
         width = sum(w for w,p in glyphs)
         if width > 170: raise ValueError('Palavra longa demais; separe com espaços')
         if x+width > 195: x=25.; y+=8
@@ -58,6 +75,7 @@ class Window(Q.QMainWindow):
         super().__init__(); self.setWindowTitle('Cameo Handwrite · Linux'); self.resize(1100,850)
         self.pages=[]; self.progress=[]; self.stop=threading.Event(); self.active=False
         box=Q.QWidget(); self.setCentralWidget(box); v=Q.QVBoxLayout(box)
+        self.font=Q.QComboBox(); self.font.addItems(STYLES); v.addWidget(self.font)
         self.text=Q.QPlainTextEdit(); self.text.setPlaceholderText('Cole seu texto aqui'); v.addWidget(self.text,2)
         row=Q.QHBoxLayout(); v.addLayout(row)
         self.page=Q.QSpinBox(); self.page.setPrefix('Folha '); self.page.setMinimum(1); row.addWidget(self.page)
@@ -67,18 +85,20 @@ class Window(Q.QMainWindow):
         self.scene=Q.QGraphicsScene(); self.view=Q.QGraphicsView(self.scene); v.addWidget(self.view,5)
         self.scene.installEventFilter(self)
         self.status=Q.QLabel('A4 · Letras de 4 mm · Coloque a caneta no suporte 1, sem lâminas.'); v.addWidget(self.status)
-        self.text.textChanged.connect(self.rebuild); self.page.valueChanged.connect(self.select)
+        self.font.currentTextChanged.connect(self.rebuild); self.text.textChanged.connect(self.rebuild); self.page.valueChanged.connect(self.select)
         self.resume.valueChanged.connect(self.draw); self.button.clicked.connect(self.print_page)
         self.cancel.clicked.connect(self.stop.set); self.signal.connect(self.on_progress)
         if STORE.exists():
             try:
-                saved=json.loads(STORE.read_text()); self.text.setPlainText(saved['text'])
+                saved=json.loads(STORE.read_text())
+                self.font.blockSignals(True); self.font.setCurrentText(saved.get('style','Anterior')); self.font.blockSignals(False)
+                self.text.setPlainText(saved['text'])
                 if len(saved['progress'])==len(self.pages): self.progress=saved['progress']
                 self.select()
             except Exception as e: self.status.setText(str(e))
     def save(self):
         STORE.parent.mkdir(parents=True,exist_ok=True); tmp=STORE.with_suffix('.tmp')
-        tmp.write_text(json.dumps({'text':self.text.toPlainText(),'progress':self.progress})); tmp.replace(STORE)
+        tmp.write_text(json.dumps({'text':self.text.toPlainText(),'progress':self.progress,'style':self.font.currentText()})); tmp.replace(STORE)
     def eventFilter(self,obj,event):
         if obj is self.scene and event.type()==QtCore.QEvent.GraphicsSceneMousePress and self.pages and not self.active:
             p=event.scenePos(); strokes=self.pages[self.page.value()-1]
@@ -89,7 +109,7 @@ class Window(Q.QMainWindow):
         return super().eventFilter(obj,event)
     def rebuild(self):
         try:
-            self.pages=layout(self.text.toPlainText()); self.progress=[0]*len(self.pages)
+            self.pages=layout(self.text.toPlainText(),self.font.currentText()); self.progress=[0]*len(self.pages)
             self.page.setMaximum(len(self.pages)); self.select(); self.save()
         except Exception as e: self.pages=[]; self.status.setText(str(e)); self.scene.clear()
     def select(self):
@@ -112,13 +132,13 @@ class Window(Q.QMainWindow):
             self.progress[self.page.value()-1]=done; self.resume.setValue(done+1); self.save()
         if done==-2:
             self.active=False
-            for w in (self.text,self.page,self.resume,self.button): w.setEnabled(True)
+            for w in (self.text,self.font,self.page,self.resume,self.button): w.setEnabled(True)
     def print_page(self):
         if not self.pages or self.active: return
         strokes=self.pages[self.page.value()-1]; start=self.resume.value()-1
         if start>=len(strokes): self.status.setText('Folha concluída. Selecione e carregue a próxima folha.'); return
         self.active=True; self.stop.clear()
-        for w in (self.text,self.page,self.resume,self.button): w.setEnabled(False)
+        for w in (self.text,self.font,self.page,self.resume,self.button): w.setEnabled(False)
         def work():
             try: asyncio.run(self.send(strokes,start))
             except Exception as e: self.signal.emit('Interrompido: '+str(e)+'. Confira o papel e ajuste a retomada.',-1)
