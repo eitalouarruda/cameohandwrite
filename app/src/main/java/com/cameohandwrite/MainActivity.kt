@@ -151,7 +151,7 @@ class MainActivity:ComponentActivity() {
                         NumberField("Velocidade estimada de escrita (mm/s)",s.writeSpeed) { v->if(v in 1.0..100.0) vm.update { it.copy(writeSpeed=v) } }
                         NumberField("Velocidade estimada de deslocamento (mm/s)",s.travelSpeed) { v->if(v in 1.0..200.0) vm.update { it.copy(travelSpeed=v) } }
                         NumberField("Simplificação geométrica (mm, 0–0,5)",s.tolerance) { v->if(v in 0.0..0.5) vm.update { it.copy(tolerance=v) } }
-                        Text("Velocidades são usadas na estimativa. Força, levantamento, aceleração e velocidades físicas ainda não são configurados no equipamento.",style=MaterialTheme.typography.bodySmall)
+                        Text("Estas velocidades em mm/s servem à estimativa do editor. A bateria abaixo usa força e velocidade experimentais na escala do equipamento, sem configurar aceleração ou profundidade.",style=MaterialTheme.typography.bodySmall)
                         Button(onClick={vm.simulate(currentPage)},enabled=!state.busy && state.error==null && !simulation.running) { Text("Simular escrita da página ${currentPage+1}") }
                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick=vm.simulator::pause,enabled=simulation.running) { Text(if(simulation.paused) "Retomar" else "Pausar") }
