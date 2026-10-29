@@ -54,4 +54,12 @@ Até esses testes, descoberta BLE/USB, logs, serialização GPGL, SVG e simulado
 
 O diagnóstico local enviado pelo usuário identificou os quatro UUIDs documentados e resposta real `CAMEO 5 V1.04` após handshake e `FG`. O endereço BLE não é incorporado ao código nem publicado. Isso comprova comunicação de diagnóstico com uma Cameo 5 original; não comprova movimento ou escrita.
 
-A versão 0.2.0 adiciona consulta `ESC ENQ` e teste opt-in de três movimentos absolutos M, limitado aos pontos (1,1), (2,1), (1,1) mm. Sem caneta/lâmina, sem D nem configuração de ferramenta. Uma resposta desconhecida, timeout ou desconexão impede próximos movimentos; não há retomada automática. A posição física inicial/origem requer conferência pelo usuário, e a observação de movimento real continua pendente.
+A versão 0.2.0 adiciona consulta `ESC ENQ` e teste opt-in de três movimentos absolutos M, limitado aos pontos (1,1), (2,1), (1,1) mm. Sem caneta/lâmina, sem D nem configuração de ferramenta. Uma resposta desconhecida, timeout ou desconexão impede próximos movimentos; não há retomada automática. A posição física inicial/origem requer conferência pelo usuário. O primeiro teste de movimento foi posteriormente confirmado pelo usuário, conforme registro abaixo.
+
+### Teste físico de movimento confirmado
+
+O segundo diagnóstico enviado pelo usuário na versão 0.2.0 registra a sequência completa `M20,20`, `M20,40`, `M20,20` (todos terminados em ETX), com respostas de estado `0` (pronta) entre as etapas. A característica CONTROL também registra eventos `1` → `0` associados aos comandos. O usuário informou explicitamente: **“o carro moveu”**.
+
+Evidência agora disponível: envio BLE de comandos GPGL M e movimento físico observado em uma Cameo 5 original V1.04. O teste foi concluído sem comando D, e o diagnóstico terminou com estado pronto. O registro confirma movimento observado, não uma medição independente da distância, orientação dos eixos ou origem física.
+
+Ainda pendentes: baixar/levantar a caneta sob carga, executar um traço D, verificar precisão em milímetros, calibração em folha pautada, execução de texto, limites mecânicos e parada/desconexão durante movimento. O resultado não libera automaticamente escrita de texto nem comprova esses itens.
