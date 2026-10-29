@@ -19,7 +19,7 @@ class AppSmokeTest {
         compose.waitUntil(15000) { compose.onAllNodesWithText("Exportar esta página em SVG").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Folha",useUnmergedTree=true).performClick()
         compose.onNodeWithText("Folha e pautas físicas").assertExists()
-        compose.onNodeWithText("Ajustes",useUnmergedTree=true).performClick()
+        compose.onNodeWithText("Ajustes",useUnmergedTree=true).performScrollTo().performClick()
         compose.onNodeWithText("Configurações locais").assertExists()
     }
 }
