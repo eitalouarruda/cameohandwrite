@@ -211,7 +211,7 @@ class BleDiagnostics(private val context:Context) {
     fun stopMotionTest() {
         stopProbe=true
         log("Solicitada interrupção das próximas etapas; isso não aborta o comando já recebido pela Cameo")
-        mutable.value=mutable.value.copy(testMessage="Parando envio após o comando atual; aguarde a máquina")
+        mutable.value=mutable.value.copy(testMessage=if(mutable.value.suiteRunning) "Parando envio após o bloco atual; aguarde a máquina" else "Parando envio após o comando atual; aguarde a máquina")
     }
     private fun invalidateSession() {
         identifiedGatt=null
