@@ -29,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cameohandwrite.domain.*
 import com.cameohandwrite.data.usb.UsbDiagnostics
 import com.cameohandwrite.ui.PaperPreview
+import com.cameohandwrite.ui.plotter.MotionProbeControls
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -153,18 +154,19 @@ class MainActivity:ComponentActivity() {
                         if(simulation.total>0) PaperPreview(Page(vm.simulator.recorded.toList(),0),s.paper,Modifier.fillMaxWidth().height(300.dp))
                         HorizontalDivider()
                         SectionTitle("Cameo 5 · diagnóstico BLE")
-                        Text("Esta versão não envia movimentos à Cameo. Descoberta GATT e serialização GPGL estão implementadas; origem, configuração da caneta e controle de execução exigem validação física.")
+                        Text("A escrita de texto continua bloqueada. Esta versão permite consultar estado e executar um teste mínimo de movimento sem ferramenta após identificar a Cameo 5.")
                         Text("Preferido: ${s.preferredDevice.ifEmpty { "nenhum" }}",style=MaterialTheme.typography.bodySmall)
                         Button(onClick={
                             permissions.launch(if(Build.VERSION.SDK_INT>=31) arrayOf(Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.BLUETOOTH_CONNECT) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
-                        },enabled=!ble.scanning) { Text(if(ble.scanning) "Buscando…" else "Buscar dispositivos BLE") }
-                        ble.devices.forEach { d -> OutlinedButton(onClick={vm.update { it.copy(preferredDevice=d.address) };vm.ble.connect(d.address)}) { Text("${d.name} · ${d.rssi} dBm\n${d.address}") } }
+                        },enabled=!ble.scanning && !ble.identifying && !ble.queryingStatus && !ble.testing) { Text(if(ble.scanning) "Buscando…" else "Buscar dispositivos BLE") }
+                        ble.devices.forEach { d -> OutlinedButton(enabled=!ble.identifying && !ble.queryingStatus && !ble.testing,onClick={vm.update { it.copy(preferredDevice=d.address) };vm.ble.connect(d.address)}) { Text("${d.name} · ${d.rssi} dBm\n${d.address}") } }
                         if(ble.connected && ble.knownService) {
                             Text("Identificação opcional: use somente com a máquina ociosa. O handshake reinicia o estado do protocolo (ESC EOT); não envia movimentos.",style=MaterialTheme.typography.bodySmall)
-                            OutlinedButton(onClick=vm::identifyDevice,enabled=!ble.identifying) { Text(if(ble.identifying) "Consultando…" else "Inicializar diagnóstico e consultar modelo") }
+                            OutlinedButton(onClick=vm::identifyDevice,enabled=!ble.identifying && !ble.queryingStatus && !ble.testing) { Text(if(ble.identifying) "Consultando…" else "Inicializar diagnóstico e consultar modelo") }
                             if(ble.model.isNotBlank()) Text("Resposta FG: ${ble.model}")
                         }
-                        if(ble.connected) OutlinedButton(onClick=vm.ble::disconnect) { Text("Desconectar GATT") }
+                        MotionProbeControls(ble,vm::queryDeviceStatus,vm::testDeviceMotion,vm.ble::stopMotionTest)
+                        if(ble.connected) OutlinedButton(onClick=vm.ble::disconnect,enabled=!ble.testing && !ble.identifying && !ble.queryingStatus) { Text("Desconectar GATT") }
                         Text(ble.log,style=MaterialTheme.typography.bodySmall)
                         OutlinedButton(onClick={exportLogs.launch("cameo-diagnostico-ble.txt")}) { Text("Exportar diagnóstico BLE") }
                         var usb by remember { mutableStateOf("") }

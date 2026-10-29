@@ -55,6 +55,12 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
     fun identifyDevice() { viewModelScope.launch {
         try { ble.identify() } catch(e:Exception) { message("Identificação BLE falhou: ${e.message}") }
     } }
+    fun queryDeviceStatus() { viewModelScope.launch {
+        try { ble.queryStatus() } catch(e:CancellationException) { throw e } catch(e:Exception) { message("Consulta de estado falhou: ${e.message}") }
+    } }
+    fun testDeviceMotion() { viewModelScope.launch {
+        try { ble.testMotion() } catch(e:CancellationException) { throw e } catch(e:Exception) { message("Teste de movimento interrompido: ${e.message}") }
+    } }
     fun exportSettings()=repository.encode(mutable.value.settings)
     fun importSettings(raw:String) {
         try { val s=repository.decode(raw,commitProfiles=false);layout.layout(s);repository.decode(raw);mutable.value=mutable.value.copy(profiles=repository.profiles);update { s };message("Configurações importadas") }
