@@ -63,3 +63,10 @@ O segundo diagnóstico enviado pelo usuário na versão 0.2.0 registra a sequên
 Evidência agora disponível: envio BLE de comandos GPGL M e movimento físico observado em uma Cameo 5 original V1.04. O teste foi concluído sem comando D, e o diagnóstico terminou com estado pronto. O registro confirma movimento observado, não uma medição independente da distância, orientação dos eixos ou origem física.
 
 Ainda pendentes: baixar/levantar a caneta sob carga, executar um traço D, verificar precisão em milímetros, calibração em folha pautada, execução de texto, limites mecânicos e parada/desconexão durante movimento. O resultado não libera automaticamente escrita de texto nem comprova esses itens.
+
+
+## Bateria experimental 0.3.0
+
+Uma única execução reúne cinco padrões M/D, com movimentos limitados à folha/margens e extensão máxima de 85 × 110 mm. A configuração experimental de caneta usa apenas comandos publicados em `SilhouetteCameoTool` de Graphtec.py na revisão fixada: seleção J1, força FXn,1 e velocidade !n,1 (limitadas a 1–10), FC0,1,1, FE0,1 e FF0,0,1. Não envia profundidade, aceleração nem reset. Isso constitui implementação baseada em fonte verificável, não confirmação física desses ajustes.
+
+Cada comando tem confirmação ATT e consulta de estado, sem repetição de movimento incerto. M levanta no último ponto confirmado antes de atender pausa/interrupção solicitada; falhas de comunicação encerram a sessão sem adivinhar posição nem enviar recuperação. O relatório único distingue envio de cada etapa das observações manuais e registra perfil/calibração, parâmetros, medidas e comunicação com timestamps. O último relatório é salvo localmente durante a execução; uma execução recuperada após fechamento não é declarada concluída. O usuário pode repetir a bateria e corrigir X/Y no mesmo APK.

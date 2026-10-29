@@ -2,7 +2,7 @@
 
 Aplicativo Android 10+ em Kotlin/Compose para preparar escrita de traço único em folhas pautadas. Interface em português, offline, sem conta, backend ou permissão de internet.
 
-**Status:** editor, layout, prévia, SVG, calibração, simulador e diagnóstico BLE/USB implementados. **A escrita de texto pela Cameo 5 está bloqueada nesta versão; há um teste experimental de movimento sem ferramenta.** O diagnóstico enviado pelo usuário confirmou handshake e identificação `CAMEO 5 V1.04` por BLE. Origem, caneta, execução de movimentos e cancelamento físico ainda precisam ser testados. Instalar o APK não implica suporte físico validado.
+**Status:** editor, layout, prévia, SVG, calibração, simulador e diagnóstico BLE/USB implementados. **A escrita de documentos pela Cameo 5 está bloqueada nesta versão; há testes experimentais de movimento e uma bateria completa com caneta.** O diagnóstico enviado pelo usuário confirmou handshake e identificação `CAMEO 5 V1.04` por BLE. O usuário confirmou o movimento real do carro com comandos M. Caneta, precisão, escrita e cancelamento físico ainda precisam de validação. Instalar o APK não implica suporte físico validado.
 
 ## Instalar
 
@@ -57,6 +57,18 @@ Não implementados/liberados: transmissão física de trabalhos de texto BLE/USB
 Comandos fixos `M20,20`, `M20,40`, `M20,20`, terminados em ETX, na ordem Y,X a 20 unidades/mm: pontos absolutos (1,1) → (2,1) → (1,1) mm em relação à origem carregada. Não são deslocamentos relativos à posição atual, e o limite de 2 mm nas coordenadas não garante deslocamento inicial pequeno se a origem/carro estiverem em outra posição. Sem comandos D, força, velocidade ou seleção de ferramenta. Um comando por vez, com consulta de estado antes/depois e timeout; sem repetição automática. Recusa modelo diferente, base descarregada, ocupado ou estado desconhecido.
 
 **Interromper próximas etapas** apenas impede novos movimentos; não aborta um comando já aceito e não envia retorno automático. Em falha/timeout a sessão é encerrada. Para repetir, desconecte e identifique novamente após conferir a base. O estado pronto e confirmações GATT não comprovam que o carro se moveu: essa confirmação depende de observação física. Escrita com caneta e textos inteiros continuam bloqueados.
+
+## Bateria única de testes com caneta (0.3.0)
+
+O aplicativo executa cinco padrões em uma única sessão: traço de 5 mm; dois traços com intervalo para verificar levantamento; quadrado de 10 mm; cruzes para alinhamento; amostra single-line **Olá ação 123**. A prévia usa exatamente os mesmos trajetos calibrados, no perfil atual de folha. Os padrões ficam dentro de uma área máxima de 85 × 110 mm, validada contra folha e margens. A primeira pauta ancora o primeiro traço; as cruzes e amostra ficam em pautas posteriores. Se a bateria não couber, o app recusa o envio.
+
+1. Use papel de descarte preso à base e caneta corretamente ajustada no **suporte 1**; suporte 2 vazio, sem lâminas. Confira origem e área mostrada na prévia.
+2. Em Escrita, conecte, consulte modelo e estado; com estado Pronta, confirme a preparação e use **Executar bateria completa**.
+3. Aguarde a bateria ou pause/interrompa. O app levanta a caneta no último ponto confirmado antes de honrar uma pausa/interrupção normal. Em timeout/desconexão ele não tenta comandos de recuperação nem repete desenhos: a caneta pode continuar baixada; confira a máquina.
+4. Avalie cada padrão como OK ou Problema, preencha medidas do quadrado, erro X/Y e observações. Use **Copiar resumo** para colar o resultado na conversa ou **Exportar relatório único** para enviar um único JSON com etapas, configuração, observações e comunicação.
+5. Aplique a correção X/Y no próprio app e repita a bateria com outra folha, sem outro APK. O último relatório é salvo periodicamente e recuperado após fechar o app. Exporte-o antes de iniciar outra bateria ou desinstalar o aplicativo.
+
+Configuração de caneta experimental, a partir de `SilhouetteCameoTool` no upstream fixado: `J1`, `FXforça,1`, `!velocidade,1`, `FC0,1,1`, `FE0,1`, `FF0,0,1`, todos com ETX. Força e velocidade limitadas à escala GPGL 1–10, inicialmente 5; não são mm/s nem pressão em unidade física. Não envia profundidade de lâmina, aceleração ou reset da origem. Uma resposta pronta não certifica contato/levantamento: informe a observação física no relatório. O app não marca testes como OK automaticamente e não habilita documentos completos só por concluir o envio.
 
 ## Arquitetura e build
 
