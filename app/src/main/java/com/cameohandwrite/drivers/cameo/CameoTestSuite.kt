@@ -11,7 +11,7 @@ data class HardwareSuite(val paper:Paper,val stages:List<HardwareStage>) {
 }
 data class PenSetup(val force:Int=5,val speed:Int=5) {
     fun commands():List<ByteArray> {
-        require(force in 1..10 && speed in 1..10) { "Teste limitado a força/velocidade 1–10 na escala GPGL" }
+        require(force in 1..20 && speed in 1..10) { "Teste limitado a força 1–20 e velocidade 1–10 na escala GPGL" }
         // Graphtec.py, SilhouetteCameoTool: holder 1, small force/speed, pen offset,
         // no corner sharpening. No depth, acceleration, origin reset or media commands.
         return listOf("J1","FX$force,1","!$speed,1","FC0,1,1","FE0,1","FF0,0,1").map { (it+Cameo5Driver.ETX).toByteArray(Charsets.US_ASCII) }

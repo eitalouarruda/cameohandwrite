@@ -19,6 +19,11 @@ jobs:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
+      - name: Reutilizar assinatura debug para futuras atualizações
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: cameo-debug-signing-v1
       - name: Testar e compilar APK
         run: ./gradlew testDebugUnitTest assembleDebug lintDebug --stacktrace
       - uses: actions/upload-artifact@v4

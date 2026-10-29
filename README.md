@@ -68,7 +68,7 @@ O aplicativo executa cinco padrões em uma única sessão: traço de 5 mm; dois 
 4. Avalie cada padrão como OK ou Problema, preencha medidas do quadrado, erro X/Y e observações. Use **Copiar resumo** para colar o resultado na conversa ou **Exportar relatório único** para enviar um único JSON com etapas, configuração, observações e comunicação.
 5. Aplique a correção X/Y no próprio app e repita a bateria com outra folha, sem outro APK. O último relatório é salvo periodicamente e recuperado após fechar o app. Exporte-o antes de iniciar outra bateria ou desinstalar o aplicativo.
 
-Configuração de caneta experimental, a partir de `SilhouetteCameoTool` no upstream fixado: `J1`, `FXforça,1`, `!velocidade,1`, `FC0,1,1`, `FE0,1`, `FF0,0,1`, todos com ETX. Força e velocidade limitadas à escala GPGL 1–10, inicialmente 5; não são mm/s nem pressão em unidade física. Não envia profundidade de lâmina, aceleração ou reset da origem. Uma resposta pronta não certifica contato/levantamento: informe a observação física no relatório. O app não marca testes como OK automaticamente e não habilita documentos completos só por concluir o envio.
+Configuração de caneta experimental, a partir de `SilhouetteCameoTool` no upstream fixado: `J1`, `FXforça,1`, `!velocidade,1`, `FC0,1,1`, `FE0,1`, `FF0,0,1`, todos com ETX. Força limitada a 1–20 e velocidade a 1–10 na escala GPGL, inicialmente 5; não são mm/s nem pressão em unidade física. Não envia profundidade de lâmina, aceleração ou reset da origem. Uma resposta pronta não certifica contato/levantamento: informe a observação física no relatório. O app não marca testes como OK automaticamente e não habilita documentos completos só por concluir o envio.
 
 ## Arquitetura e build
 

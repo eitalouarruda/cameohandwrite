@@ -31,7 +31,7 @@ import com.cameohandwrite.ui.PaperPreview
         Text("Força experimental: $force · velocidade: $speed (escala do equipamento, não mm/s)")
         Text("Ajuste no mesmo APK se não marcar. Não há ajuste de profundidade de lâmina.",style=MaterialTheme.typography.bodySmall)
         Text("Força da caneta: $force")
-        Slider(force.toFloat(),{force=it.toInt()},valueRange=1f..10f,steps=8,enabled=idle)
+        Slider(force.toFloat(),{force=it.toInt()},valueRange=1f..20f,steps=18,enabled=idle)
         Text("Velocidade do teste: $speed")
         Slider(speed.toFloat(),{speed=it.toInt()},valueRange=1f..10f,steps=8,enabled=idle)
         Row(verticalAlignment=Alignment.CenterVertically) {

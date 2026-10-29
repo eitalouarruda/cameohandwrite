@@ -39,7 +39,7 @@ class CameoTestSuiteTest {
         assertEquals(listOf("J1","FX5,1","!5,1","FC0,1,1","FE0,1","FF0,0,1"),setup)
         assertFalse(setup.any {it.startsWith("TF") || it.startsWith("TJ")})
     }
-    @Test(expected=IllegalArgumentException::class) fun rejectsExcessivePressure() {PenSetup(force=11).commands()}
+    @Test(expected=IllegalArgumentException::class) fun rejectsExcessivePressure() {PenSetup(force=21).commands()}
     @Test fun sendsCompleteStrokeAndLiftsAtEndpoint() = runBlocking {
         val link=Link()
         assertTrue(CameoTestSuite.run(model,smallSuite(),PenSetup(),link,pollMillis=1))
