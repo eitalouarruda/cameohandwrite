@@ -59,6 +59,7 @@ class MainActivity:ComponentActivity() {
     var selectedPage by remember {mutableIntStateOf(0)}
     val page=selectedPage.coerceIn(0,maxOf(0,state.document.pages.lastIndex))
     val current=state.document.pages.getOrNull(page)
+    LaunchedEffect(state.document) {selectedPage=0}
     val ready=ble.connected && Cameo5Driver.identifiesOriginalCameo5(ble.model)
     var devicesOpen by remember {mutableStateOf(false)}
     var awaitingConnection by remember {mutableStateOf(false)}
@@ -127,7 +128,7 @@ class MainActivity:ComponentActivity() {
                     Text("Cameo Handwrite",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
                     Text("${BuildConfig.VERSION_NAME} · ${if(s.style==Style.MESSY) "Feia" else s.style.label} · ${s.quality.label}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)
                 }
-                TextButton(onClick={focus.clearFocus();keyboard?.hide();pendingPage=null;devicesOpen=true;search(if(!ready) s.preferredDevice.takeIf {it.isNotBlank()} else null)},enabled=!ble.testing && !state.connecting) {Text(if(state.connecting) "Conectando…" else if(ready) "Conectada" else "Conectar")}
+                TextButton(onClick={focus.clearFocus();keyboard?.hide();pendingPage=null;devicesOpen=true;search(if(!ready) s.preferredDevice.takeIf {it.isNotBlank()} else null)},enabled=!ble.testing && !state.connecting && !state.initializing) {Text(if(state.connecting) "Conectando…" else if(ready) "Conectada" else "Conectar")}
             }
             if(state.busy || state.connecting) LinearProgressIndicator(Modifier.fillMaxWidth())
             Column(Modifier.weight(1f).verticalScroll(remember(tab) {ScrollState(0)}).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -140,10 +141,10 @@ class MainActivity:ComponentActivity() {
                                 val clip=context.getSystemService(ClipboardManager::class.java).primaryClip
                                 val text=if(clip!=null && clip.itemCount>0) clip.getItemAt(0).coerceToText(context).toString() else ""
                                 if(text.length>200000) vm.message("Limite de 200 mil caracteres") else if(text.isEmpty()) vm.message("Copie um texto primeiro") else vm.update {it.copy(text=text)}
-                            },enabled=!ble.testing && !state.connecting) {Text("Colar")}
-                            if(s.text.isNotEmpty()) TextButton(onClick={vm.update {it.copy(text="")}},enabled=!ble.testing && !state.connecting) {Text("Limpar")}
+                            },enabled=!ble.testing && !state.connecting && !state.initializing) {Text("Colar")}
+                            if(s.text.isNotEmpty()) TextButton(onClick={vm.update {it.copy(text="")}},enabled=!ble.testing && !state.connecting && !state.initializing) {Text("Limpar")}
                         }
-                        OutlinedTextField(value=s.text,onValueChange={text->if(text.length<=200000) vm.update {it.copy(text=text)} else vm.message("Limite de 200 mil caracteres")},label={Text("Cole ou escreva o texto")},enabled=!ble.testing && !state.connecting,modifier=Modifier.fillMaxWidth().heightIn(min=170.dp,max=300.dp).testTag("editorText"))
+                        OutlinedTextField(value=s.text,onValueChange={text->if(text.length<=200000) vm.update {it.copy(text=text)} else vm.message("Limite de 200 mil caracteres")},label={Text("Cole ou escreva o texto")},enabled=!ble.testing && !state.connecting && !state.initializing,modifier=Modifier.fillMaxWidth().heightIn(min=170.dp,max=300.dp).testTag("editorText"))
                         state.error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
                         Text(if(s.text.isBlank()) "O texto aparece aqui na folha, antes de escrever." else "${state.document.pages.size} página(s) · ${s.text.length} caracteres",style=MaterialTheme.typography.bodySmall)
                         if(state.document.pages.size>1) Row(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -230,7 +231,7 @@ class MainActivity:ComponentActivity() {
                     },enabled=s.text.isNotBlank() && current?.strokes?.isNotEmpty()==true && !state.busy && state.error==null && !ble.testing && !state.connecting,modifier=Modifier.fillMaxWidth().testTag("printPage")) {Text(if(ble.completedPage==page+1) "Escrever novamente a página ${page+1}" else "Escrever página ${page+1}")}
                 }
             }
-            TabRow(selectedTabIndex=tab) {listOf("Texto","Folha","Ajustes").forEachIndexed {index,label->Tab(selected=tab==index,onClick={tab=index},enabled=!ble.testing && !state.connecting,text={Text(label)})}}
+            TabRow(selectedTabIndex=tab) {listOf("Texto","Folha","Ajustes").forEachIndexed {index,label->Tab(selected=tab==index,onClick={tab=index},enabled=!ble.testing && !state.connecting && !state.initializing,text={Text(label)})}}
         }
     }
     if(devicesOpen) ModalBottomSheet(onDismissRequest={devicesOpen=false;pendingPage=null;awaitingConnection=false;connectAfterPermission=null}) {

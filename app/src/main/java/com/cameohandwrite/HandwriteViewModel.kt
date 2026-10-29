@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class HandwriteViewModel(app:Application):AndroidViewModel(app) {
-    data class State(val settings:Settings=Settings(),val document:Document=Document(emptyList()),val error:String?=null,val busy:Boolean=true,val profiles:List<Paper> = emptyList(),val message:String="",val connecting:Boolean=false)
+    data class State(val settings:Settings=Settings(),val document:Document=Document(emptyList()),val error:String?=null,val busy:Boolean=true,val profiles:List<Paper> = emptyList(),val message:String="",val connecting:Boolean=false,val initializing:Boolean=true)
     private val repository=SettingsRepository(app)
     private val fontEngine=StrokeFontEngine(listOf("futural","scripts").associateWith { name -> StrokeFontEngine.parse(app.assets.open("$name.tsv").bufferedReader().use { it.readText() }) })
     private val layout=PageLayoutEngine(fontEngine)
@@ -31,7 +31,7 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
     private var printJob:Job?=null
     init { viewModelScope.launch {
         val settings=try { repository.load().forOpening() } catch(e:Exception) { mutable.value=mutable.value.copy(message="Configuração não carregada: ${e.message}");Settings() }
-        mutable.value=mutable.value.copy(settings=settings,profiles=repository.profiles)
+        mutable.value=mutable.value.copy(settings=settings,profiles=repository.profiles,initializing=false)
         rebuild(settings)
     } }
     fun update(change:(Settings)->Settings) {

@@ -20,6 +20,7 @@ class AppSmokeTest {
         compose.onNodeWithText("Rápido",substring=true).assertExists()
         compose.onNodeWithText("Executar bateria completa").assertDoesNotExist()
         compose.onNodeWithText("Comparar 10 / 20 / 30").assertDoesNotExist()
+        compose.waitUntil(15000) {compose.onAllNodes(hasTestTag("editorText") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("editorText").performTextClearance()
         compose.waitUntil(15000) {compose.onAllNodes(hasTestTag("printPage") and isNotEnabled()).fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("editorText").performTextReplacement("Meu texto próprio: ação, café e amanhã.")
