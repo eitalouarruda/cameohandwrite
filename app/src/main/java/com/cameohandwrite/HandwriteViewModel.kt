@@ -57,6 +57,7 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
         }
     }
     fun saveProfile() {
+        if(ble.state.value.testing) return
         try { repository.saveProfile(mutable.value.settings.paper);mutable.value=mutable.value.copy(profiles=repository.profiles);update { it };message("Perfil salvo neste celular") }
         catch(e:Exception) { message(e.message ?: "Perfil inválido") }
     }
@@ -87,6 +88,7 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
             val page=snapshot.document.pages.getOrNull(index) ?: error("Página não encontrada")
             val job=PagePrintJob(snapshot.settings.paper,page,index+1,snapshot.document.pages.size)
             val setup=PenSetup(snapshot.settings.penForce,snapshot.settings.penSpeed)
+            simulator.cancel();simulationJob?.cancel()
             message("")
             printJob=viewModelScope.launch {
                 try {ble.printPage(job,setup)}
@@ -139,7 +141,7 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
     fun applySuiteCalibration() {
         val r=ble.report.value ?: return
         try {
-            require(!ble.state.value.suiteRunning)
+            require(!ble.state.value.testing)
             val x=r.errorX.replace(',','.').toDoubleOrNull() ?: error("Informe o erro X medido")
             val y=r.errorY.replace(',','.').toDoubleOrNull() ?: error("Informe o erro Y medido")
             require(x.isFinite() && y.isFinite())
@@ -151,6 +153,7 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
     }
     fun exportSettings()=repository.encode(mutable.value.settings)
     fun importSettings(raw:String) {
+        if(ble.state.value.testing) return
         try { val s=repository.decode(raw,commitProfiles=false);layout.layout(s);repository.decode(raw);mutable.value=mutable.value.copy(profiles=repository.profiles);update { s };message("Configurações importadas") }
         catch(e:Exception) { message("Importação recusada: ${e.message}") }
     }

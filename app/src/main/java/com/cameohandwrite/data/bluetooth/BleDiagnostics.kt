@@ -171,10 +171,12 @@ class BleDiagnostics(private val context:Context) {
     }
     suspend fun printPage(job:PagePrintJob,setup:PenSetup) = operationLock.withLock {
         identifiedConnection()
-        mutable.update {it.copy(testing=true,printingPage=true,pageNumber=job.number,completedPage=null,suiteDone=0,suiteTotal=job.page.strokes.size,printMessage="Preparando página ${job.number}…")}
+        stopProbe=false
+        mutable.update {it.copy(testing=true,printingPage=true,suitePaused=false,pageNumber=job.number,completedPage=null,suiteDone=0,suiteTotal=job.page.strokes.size,printMessage="Preparando página ${job.number}…")}
         var prepared=false
         try {
             val validated=withContext(Dispatchers.Default) {CameoPageJob.prepare(job.paper,job.page,job.number,job.totalPages)}
+            if(stopProbe) {mutable.update {it.copy(printMessage="Preparação cancelada; nenhum comando de escrita enviado")};return@withLock}
             prepared=true
             executeJob(HardwareSuite(validated.paper,listOf(validated.stage)),setup,validated.number,validated.totalPages)
         } catch(e:Exception) {
@@ -185,9 +187,9 @@ class BleDiagnostics(private val context:Context) {
     private suspend fun executeJob(suite:HardwareSuite,setup:PenSetup,pageNumber:Int?=null,totalPages:Int?=null) {
         val (g,c)=identifiedConnection()
         setup.commands()
-        stopProbe=false
+        if(pageNumber==null) stopProbe=false
         reportMutable.value=HardwareTestReport.start(mutable.value.model,suite,setup).copy(pageNumber=pageNumber,totalPages=totalPages)
-        mutable.value=mutable.value.copy(testing=true,suiteRunning=pageNumber==null,printingPage=pageNumber!=null,pageNumber=pageNumber,printMessage=if(pageNumber!=null) "Escrevendo página $pageNumber de $totalPages" else mutable.value.printMessage,completedPage=null,suitePaused=false,suiteDone=0,suiteTotal=suite.stages.sumOf { it.page.strokes.size },suiteStage="Preparando",readyForProbe=false)
+        mutable.value=mutable.value.copy(testing=true,suiteRunning=pageNumber==null,printingPage=pageNumber!=null,pageNumber=pageNumber,printMessage=if(pageNumber!=null) "Escrevendo página $pageNumber de $totalPages" else mutable.value.printMessage,completedPage=null,suitePaused=if(pageNumber!=null) mutable.value.suitePaused else false,suiteDone=0,suiteTotal=suite.stages.sumOf { it.page.strokes.size },suiteStage="Preparando",readyForProbe=false)
         val started=android.os.SystemClock.elapsedRealtime()
         suiteGattWrites=0;suiteStatusQueries=0;suiteStreamBlocks=0
         suiteGattWriteMillis=0;suiteStatusWaitMillis=0;suiteStreamBytes=0

@@ -57,12 +57,19 @@ class MainActivity:ComponentActivity() {
     val ready=ble.connected && Cameo5Driver.identifiesOriginalCameo5(ble.model)
     var devicesOpen by remember {mutableStateOf(false)}
     var awaitingConnection by remember {mutableStateOf(false)}
+    var connectAfterPermission by remember {mutableStateOf<String?>(null)}
     var pendingPage by remember {mutableStateOf<Int?>(null)}
     var advanced by remember {mutableStateOf(false)}
     val permissions=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-        if(grants.values.all {it}) vm.ble.scan() else vm.message("Permita Bluetooth/localização para encontrar a Cameo")
+        if(devicesOpen) {
+            val address=connectAfterPermission;connectAfterPermission=null
+            if(grants.values.all {it}) {
+                if(address!=null) {awaitingConnection=true;vm.connectPrinter(address)} else vm.ble.scan()
+            } else vm.message("Permita Bluetooth/localização para encontrar a Cameo")
+        }
     }
-    fun search() {
+    fun search(address:String?=null) {
+        connectAfterPermission=address
         permissions.launch(if(Build.VERSION.SDK_INT>=31) arrayOf(Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.BLUETOOTH_CONNECT) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
     }
     LaunchedEffect(ready,state.connecting,state.busy,devicesOpen,pendingPage,awaitingConnection) {
@@ -114,7 +121,7 @@ class MainActivity:ComponentActivity() {
                     Text("Cameo Handwrite",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
                     Text("${BuildConfig.VERSION_NAME} · ${if(s.style==Style.MESSY) "Feia" else s.style.label} · ${s.quality.label}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)
                 }
-                TextButton(onClick={pendingPage=null;devicesOpen=true;search()},enabled=!ble.testing && !state.connecting) {Text(if(state.connecting) "Conectando…" else if(ready) "Conectada" else "Conectar")}
+                TextButton(onClick={pendingPage=null;devicesOpen=true;search(if(!ready) s.preferredDevice.takeIf {it.isNotBlank()} else null)},enabled=!ble.testing && !state.connecting) {Text(if(state.connecting) "Conectando…" else if(ready) "Conectada" else "Conectar")}
             }
             if(state.busy || state.connecting) LinearProgressIndicator(Modifier.fillMaxWidth())
             Column(Modifier.weight(1f).verticalScroll(remember(tab) {ScrollState(0)}).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -211,13 +218,13 @@ class MainActivity:ComponentActivity() {
             if(tab==0 && !ble.printingPage) Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp)) {
                 Text("Folha carregada como na prévia; caneta no suporte 1 e sem lâminas.",style=MaterialTheme.typography.bodySmall)
                 Button(onClick={
-                    if(ready) vm.printPage(page) else {pendingPage=page;devicesOpen=true;search()}
+                    if(ready) vm.printPage(page) else {pendingPage=page;devicesOpen=true;search(s.preferredDevice.takeIf {it.isNotBlank()})}
                 },enabled=s.text.isNotBlank() && current?.strokes?.isNotEmpty()==true && !state.busy && state.error==null && !ble.testing && !state.connecting,modifier=Modifier.fillMaxWidth().testTag("printPage")) {Text(if(ble.completedPage==page+1) "Escrever novamente a página ${page+1}" else "Escrever página ${page+1}")}
             }
             TabRow(selectedTabIndex=tab) {listOf("Texto","Folha","Ajustes").forEachIndexed {index,label->Tab(selected=tab==index,onClick={tab=index},enabled=!ble.testing && !state.connecting,text={Text(label)})}}
         }
     }
-    if(devicesOpen) ModalBottomSheet(onDismissRequest={devicesOpen=false;pendingPage=null;awaitingConnection=false}) {
+    if(devicesOpen) ModalBottomSheet(onDismissRequest={devicesOpen=false;pendingPage=null;awaitingConnection=false;connectAfterPermission=null}) {
         Column(Modifier.fillMaxWidth().heightIn(max=560.dp).verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             SectionTitle("Conectar Cameo")
             Text("Ligue a Cameo e aguarde ficar ociosa. Para escrever, carregue a folha e coloque a caneta no suporte 1, sem lâminas.")

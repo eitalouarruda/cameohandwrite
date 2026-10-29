@@ -19,7 +19,7 @@ class SettingsRepository(private val context:Context) {
         return decode(raw,validate=false)
     }
     suspend fun save(s:Settings) { context.settingsStore.edit { it[key]=encode(s) } }
-    fun saveProfile(p:Paper) { p.validate();profiles=profiles.filter { it.name!=p.name }+p }
+    fun saveProfile(p:Paper) { require(p.name.isNotBlank()) {"Dê um nome ao perfil"};p.validate();profiles=profiles.filter { it.name!=p.name }+p }
     private fun paperJson(p:Paper)=JSONObject().apply {
         put("name",p.name);put("width",p.width);put("height",p.height);put("left",p.left);put("right",p.right);put("top",p.top);put("bottom",p.bottom);put("holes",p.holes);put("firstLine",p.firstLine);put("lineSpacing",p.lineSpacing);put("offsetX",p.offsetX);put("offsetY",p.offsetY)
     }
