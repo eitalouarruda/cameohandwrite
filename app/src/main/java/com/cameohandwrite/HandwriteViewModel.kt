@@ -57,7 +57,7 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
     } }
     fun exportSettings()=repository.encode(mutable.value.settings)
     fun importSettings(raw:String) {
-        try { val s=repository.decode(raw);layout.layout(s);mutable.value=mutable.value.copy(profiles=repository.profiles);update { s };message("Configurações importadas") }
+        try { val s=repository.decode(raw,commitProfiles=false);layout.layout(s);repository.decode(raw);mutable.value=mutable.value.copy(profiles=repository.profiles);update { s };message("Configurações importadas") }
         catch(e:Exception) { message("Importação recusada: ${e.message}") }
     }
     fun simulate(page:Int,alignment:Boolean=false) {

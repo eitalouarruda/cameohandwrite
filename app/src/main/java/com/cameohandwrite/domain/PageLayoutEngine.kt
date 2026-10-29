@@ -17,8 +17,11 @@ class PageLayoutEngine(private val fonts: StrokeFontEngine) {
         data class Item(val char: Char,val glyph: Glyph)
         var line=mutableListOf<Item>(); var lineWidth=0.0
         // Conservative reservation for accents, descenders and per-glyph width variation.
-        val minX=maxOf(p.startX,p.startX-p.offsetX)
-        val maxX=minOf(p.width-p.right,p.width-p.right-p.offsetX)
+        val minX=p.startX
+        val maxX=p.width-p.right
+        // Count writable baselines, reserving room for descenders below the printed line.
+        val writableRows=minOf(p.lineCount,kotlin.math.floor((p.height-p.bottom-settings.letterHeight*0.6-p.firstLine)/p.lineSpacing).toInt()+1)
+        require(writableRows>0) { "Nenhuma pauta comporta descendentes com esta altura" }
         val width=maxX-minX
         require(width>settings.letterHeight*2) { "Calibração elimina a largura útil" }
         val warnings=mutableSetOf<String>()
@@ -29,13 +32,14 @@ class PageLayoutEngine(private val fonts: StrokeFontEngine) {
             for(item in line) {
                 item.glyph.strokes.forEach { s ->
                     val transformed=s.map { Pt(it.x+x+p.offsetX,it.y+baseline+p.offsetY) }
-                    require(transformed.all { it.x >= p.startX-0.001 && it.x<=p.width-p.right+0.001 && it.y>=p.top && it.y<=p.height-p.bottom }) { "Traços fora das margens: ajuste primeira pauta, altura ou calibração" }
+                    require(s.all { it.x+x >= p.startX-0.001 && it.x+x<=p.width-p.right+0.001 && it.y+baseline>=p.top && it.y+baseline<=p.height-p.bottom }) { "Letra fora das margens nominais: ajuste primeira pauta ou altura" }
+                    require(transformed.all { it.x in 0.0..p.width && it.y in 0.0..p.height }) { "Traços fora das margens: ajuste primeira pauta, altura ou calibração" }
                     if(transformed.size>=2) strokes.add(transformed)
                 }
                 x+=item.glyph.width+if(item.char==' ') extra else 0.0
             }
             line=mutableListOf();lineWidth=0.0;row++
-            if(row>=p.lineCount) {
+            if(row>=writableRows) {
                 pages.add(Page(strokes,row)); strokes=mutableListOf();row=0;page++
                 random=Random(settings.seed+page*7919)
             }
@@ -48,7 +52,7 @@ class PageLayoutEngine(private val fonts: StrokeFontEngine) {
         }
         val paragraphs=settings.text.replace("\r\n","\n").replace('\r','\n').split('\n')
         paragraphs.forEachIndexed { paragraphIndex, paragraph ->
-            val words=paragraph.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+            val words=paragraph.map { if(it.isWhitespace()) ' ' else it }.joinToString("").split(' ').filter { it.isNotEmpty() }
             for(word in words) {
                 var items=word.map(::measured)
                 var w=items.sumOf { it.glyph.width }

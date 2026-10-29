@@ -40,8 +40,8 @@ object Cameo5Driver {
         val result = StringBuilder()
         fun command(letter: Char, x: Double, y: Double) {
             require(x.isFinite() && y.isFinite()) { "Coordenada não finita" }
-            require(x >= paper.startX - 0.001 && x <= paper.width - paper.right + 0.001 &&
-                y >= paper.top && y <= paper.height - paper.bottom) {
+            require(x >= maxOf(0.0,paper.startX+paper.offsetX)-0.001 && x <= minOf(paper.width,paper.width-paper.right+paper.offsetX)+0.001 &&
+                y >= maxOf(0.0,paper.top+paper.offsetY) && y <= minOf(paper.height,paper.height-paper.bottom+paper.offsetY)) {
                 "Trajeto fora da área útil: $x,$y mm"
             }
             // GPGL encodes Y first, then X, at 20 Silhouette units per millimeter.

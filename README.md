@@ -15,11 +15,11 @@ Android 10 (API 29) ou superior. Não precisa conectar a Cameo para editar, visu
 ## Uso
 
 - **Editor:** cole até 200 mil caracteres, escolha estilo, altura em mm, espaço entre palavras, alinhamento e irregularidade. Caracteres sem glifo bloqueiam o layout com aviso; não são descartados silenciosamente.
-- **Folha:** configure dimensões, margens, faixa dos furos, primeira pauta e distância entre pautas; salve perfis. Valores iniciais são exemplos, não medidas da sua folha. Use os perfis A4/A5 ou um tamanho personalizado.
+- **Folha:** configure dimensões, margens, faixa dos furos, primeira pauta e distância entre pautas; salve perfis. Valores iniciais são exemplos, não medidas da sua folha. A contagem de pautas físicas pode exceder a de linhas usadas: o layout reserva espaço para descendentes na última pauta. Use os perfis A4/A5 ou um tamanho personalizado.
 - **Prévia:** navegue pelas páginas, arraste/amplie com dois dedos e veja a ordem colorida dos traços. Exporte cada página em SVG vetorial em milímetros. Linhas e furos aparecem apenas como referências na prévia.
 - **Escrita:** escolha Rápido/Normal/Caprichado, simplificação e velocidades para estimativa. Simule a página, pause, retome e cancele. O progresso representa traços simulados; não o estado da Cameo. O simulador é acelerado, não reproduz a duração estimada em tempo real.
 - **Calibração:** posicione a folha, exporte as cruzes de teste, execute o SVG por um fluxo físico já validado, meça erro X/Y e aplique a correção oposta. Salve o perfil. Passos de 0,1 mm; sem compensação automática de rotação ou distorção da folha.
-- **Ajustes:** exporte/importe configurações JSON com texto e perfis. Mesmo texto, semente e parâmetros geram a mesma geometria. Os arquivos exportados incluem o texto; compartilhe-os conscientemente.
+- **Ajustes:** exporte/importe configurações JSON com texto e perfis. Mesmo texto, semente e parâmetros geram a mesma geometria. As margens são nominais; a calibração translada a geometria uma vez, com validação final dentro da folha. Os arquivos exportados incluem o texto; compartilhe-os conscientemente.
 
 A altura nominal corresponde à altura das maiúsculas; acentos e descendentes ocupam espaço adicional. Letras, pautas e calibração incompatíveis produzem erro, nunca recorte silencioso da escrita. O limite configurável de papel é 305 × 600 mm; isso não certifica a área mecânica da sua base/Cameo.
 

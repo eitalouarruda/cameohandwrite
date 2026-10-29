@@ -26,11 +26,16 @@ class EngineTest {
         val all=engine.layout(Settings(text=(33..126).map { it.toChar() }.joinToString(" ")))
         all.pages.flatMap { it.strokes }.flatten().forEach { assertTrue(it.x>=25 && it.x<=195 && it.y>=10 && it.y<=282) }
     }
+    @Test fun unicodeWhitespaceIsAcceptedWithoutMissingGlyphCrash() {
+        val plain=engine.layout(Settings(text="Olá mundo hoje"))
+        val nbsp=engine.layout(Settings(text="Olá\u00a0mundo\u2003hoje"))
+        assertEquals(plain,nbsp)
+    }
     @Test fun wrapsAndPaginates() {
         val s=Settings(text=(1..300).joinToString(" ") { "palavra" },paper=Paper(width=90.0,height=70.0,left=20.0,right=10.0,bottom=10.0))
         val result=engine.layout(s)
         assertTrue(result.pages.size>2)
-        assertEquals(s.paper.lineCount,result.pages.first().lines)
+        assertEquals(5,result.pages.first().lines)
         assertTrue(result.pages.all { it.lines<=s.paper.lineCount })
     }
     @Test fun explicitBlankLinesAndParagraphsRetained() {
@@ -52,6 +57,12 @@ class EngineTest {
         assertEquals(a.strokes.first().first().y-0.2,b.strokes.first().first().y,0.00001)
         val svg=PlotPlanner.svg(b,p)
         assertTrue(svg.contains("210.0000mm"));assertTrue(svg.contains("<path"));assertFalse(svg.contains("<text"))
+    }
+    @Test fun negativeCalibrationIsAppliedRatherThanCancelled() {
+        val s=Settings(text="Abc",irregularity=0)
+        val a=engine.layout(s).pages.single().strokes.flatten()
+        val b=engine.layout(s.copy(paper=s.paper.copy(offsetX=-0.1,offsetY=-0.1))).pages.single().strokes.flatten()
+        a.zip(b).forEach { (before,after) -> assertEquals(before.x-0.1,after.x,0.00001);assertEquals(before.y-0.1,after.y,0.00001) }
     }
     @Test fun pageVariationIsDeterministic() {
         val s=Settings(text="Ação e café. ".repeat(600),style=Style.MESSY,irregularity=100)
