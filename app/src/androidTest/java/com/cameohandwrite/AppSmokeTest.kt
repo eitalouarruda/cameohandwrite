@@ -1,6 +1,10 @@
 package com.cameohandwrite
 
 import androidx.compose.ui.test.*
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.test.platform.app.InstrumentationRegistry
+import android.graphics.Bitmap
+import java.io.File
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
@@ -22,6 +26,9 @@ class AppSmokeTest {
         compose.waitUntil(15000) {compose.onAllNodes(hasTestTag("printPage") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
         compose.onNodeWithTag("printPage").assertIsEnabled()
         compose.onNodeWithTag("pagePreview").assertExists()
+        savePreview("01-editor.png")
+        compose.onNodeWithTag("pagePreview").performScrollTo()
+        savePreview("02-page-preview.png")
     }
     @Test fun paperAndAppearanceAreAvailableWhileDiagnosticsStayHidden() {
         compose.onNodeWithText("Folha",useUnmergedTree=true).performClick()
@@ -31,4 +38,11 @@ class AppSmokeTest {
         compose.onNodeWithText("Opções avançadas").assertExists()
         compose.onNodeWithText("Executar bateria completa").assertDoesNotExist()
     }
+    private fun savePreview(name:String) {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val directory=File(context.getExternalFilesDir(null),"ui-previews").apply {mkdirs()}
+        val bitmap=compose.onRoot().captureToImage().asAndroidBitmap()
+        File(directory,name).outputStream().use {bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}
+    }
+
 }

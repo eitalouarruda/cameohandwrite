@@ -28,7 +28,9 @@ jobs:
           api-level: 29
           arch: x86_64
           disable-animations: true
-          script: ./gradlew connectedDebugAndroidTest --stacktrace
+          script: |
+            ./gradlew connectedDebugAndroidTest --stacktrace
+            adb pull /sdcard/Android/data/com.cameohandwrite/files/ui-previews ./ui-previews
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -36,3 +38,4 @@ jobs:
           path: |
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
+            ui-previews/
