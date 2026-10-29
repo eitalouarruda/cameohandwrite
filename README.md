@@ -54,7 +54,7 @@ Não implementados/liberados: transmissão física de trabalhos de texto BLE/USB
 4. Confirme os três itens sobre ferramentas, base e origem. Use **Testar movimento de 1 mm sem ferramenta**.
 5. Observe o carro e exporte o diagnóstico BLE, informando se houve movimento real.
 
-Comandos fixos `M20,20`, `M20,40`, `M20,20`, terminados em ETX, na ordem Y,X a 20 unidades/mm: pontos absolutos (1,1) → (2,1) → (1,1) mm em relação à origem carregada. Não são deslocamentos relativos à posição atual, e o limite de 2 mm nas coordenadas não garante deslocamento inicial pequeno se a origem/carro estiverem em outra posição. Sem comandos D, força, velocidade ou seleção de ferramenta. Um comando por vez, com consulta de estado antes/depois e timeout; sem repetição automática. Recusa modelo diferente, base descarregada, ocupado ou estado desconhecido.
+Comandos fixos `M20,20`, `M20,40`, `M20,20`, terminados em ETX, na ordem Y,X a 20 unidades/mm: pontos absolutos (1,1) → (2,1) → (1,1) mm em relação à origem carregada. Não são deslocamentos relativos à posição atual, e o limite de 2 mm nas coordenadas não garante deslocamento inicial pequeno se a origem/carro estiverem em outra posição. Sem comandos D, força, velocidade ou seleção de ferramenta. No teste sem ferramenta, um comando por vez, com consulta de estado antes/depois e timeout; sem repetição automática. Recusa modelo diferente, base descarregada, ocupado ou estado desconhecido.
 
 **Interromper próximas etapas** apenas impede novos movimentos; não aborta um comando já aceito e não envia retorno automático. Em falha/timeout a sessão é encerrada. Para repetir, desconecte e identifique novamente após conferir a base. O estado pronto e confirmações GATT não comprovam que o carro se moveu: essa confirmação depende de observação física. Escrita com caneta e textos inteiros continuam bloqueados.
 
@@ -91,3 +91,10 @@ Testes cobrem glifos reais, acentos, fallback ausente, escala em mm, margens, qu
 3. Validar levantamento da caneta e origem com base carregada; começar sem caneta e movimentos mínimos em papel descartável.
 4. Medir deslocamento e inclinação em vários pontos; ajustar folha e perfil.
 5. Validar fluxo/status, velocidades reais, desconexão, mídia descarregada, pausa e parada antes de habilitar transmissão de texto longo.
+
+
+### Envio rápido (0.3.1)
+
+A bateria agora agrupa trajetos em blocos de até 512 bytes, transmitidos por BLE em fragmentos de até 20 bytes com confirmação. A espera fixa de 100 ms após cada pequeno segmento foi removida: o estado é consultado entre blocos, com polling de 50 ms somente enquanto houver movimento. A geometria e a sequência dos segmentos são preservadas. A solicitação de pausa/interrupção aguarda o bloco atual, que termina em caneta levantada; não é uma parada física instantânea. Não há repetição de envio incerto.
+
+O resumo inclui duração total, número de blocos, escritas GATT e consultas. Os parâmetros de força/velocidade da última bateria são recuperados no formulário. O retorno físico positivo com força 1 e velocidade 10 refere-se à 0.3.0; o envio otimizado ainda precisa de comparação na máquina. Não é prometido um multiplicador de velocidade sem medição. A atualização deve preservar dados e instalar sobre a 0.3.0 se a chave debug em cache do Actions tiver sido mantida.
