@@ -4,3 +4,6 @@ local.properties
 **/build/
 .idea/
 *.apk
+
+desktop/.venv/
+__pycache__/

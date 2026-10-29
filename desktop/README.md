@@ -1,0 +1,13 @@
+# Cameo Handwrite para Linux
+
+Execute `./desktop/run.sh` na pasta do projeto. A primeira execução instala PySide6 e Bleak em um ambiente local; depois funciona offline.
+
+Cole o texto, confira a prévia e pressione **Imprimir**. Deixe uma única Cameo 5 ligada e visível por Bluetooth. Carregue a folha A4 alinhada à origem e use caneta no suporte 1, sem lâminas. A identificação do modelo e o estado carregado são verificados antes de escrever.
+
+A versão Linux usa A4, margens 25/15 mm, primeira pauta a 20 mm, pautas de 8 mm, letras de 4 mm, força 1 e velocidade nativa 10. O desenho usa os arquivos Hershey licenciados do projeto, traços únicos e variação determinística. Caracteres ausentes bloqueiam o trabalho.
+
+O envio para após cada folha. Carregue a próxima, selecione **Folha** e pressione **Imprimir**. **Pausar / cancelar** termina o traço em andamento antes de parar. O verde na prévia representa a região anterior ao ponto selecionado de retomada; não confirma presença de tinta.
+
+O último traço confirmado é salvo em `~/.local/share/cameohandwrite/linux-job.json`. Reabra o programa para recuperar texto e progresso. Para ajustar a retomada após erro, clique no traço da prévia ou use o campo numérico. Mantenha a folha na mesma posição e confira o ponto antes de imprimir. Uma desconexão pode deixar parte do último traço desenhada: a retomada é manual e pode repetir essa parte. Alterar o texto gera outro trabalho e zera o progresso.
+
+BlueZ deve estar ativo. Esta versão usa os UUIDs e comandos já testados no Android, fragmentos BLE confirmados de 20 bytes e blocos com caneta levantada de até 512 bytes. A comunicação física pelo Linux ainda precisa de teste na Cameo; a abertura da interface, paginação e determinismo foram verificados por software. O motor Python ainda não produz exatamente as mesmas variações geométricas do Android.
