@@ -170,8 +170,17 @@ class BleDiagnostics(private val context:Context) {
         executeJob(suite,setup)
     }
     suspend fun printPage(job:PagePrintJob,setup:PenSetup) = operationLock.withLock {
-        val prepared=CameoPageJob.prepare(job.paper,job.page,job.number,job.totalPages)
-        executeJob(HardwareSuite(prepared.paper,listOf(prepared.stage)),setup,prepared.number,prepared.totalPages)
+        identifiedConnection()
+        mutable.update {it.copy(testing=true,printingPage=true,pageNumber=job.number,completedPage=null,suiteDone=0,suiteTotal=job.page.strokes.size,printMessage="Preparando página ${job.number}…")}
+        var prepared=false
+        try {
+            val validated=withContext(Dispatchers.Default) {CameoPageJob.prepare(job.paper,job.page,job.number,job.totalPages)}
+            prepared=true
+            executeJob(HardwareSuite(validated.paper,listOf(validated.stage)),setup,validated.number,validated.totalPages)
+        } catch(e:Exception) {
+            if(!prepared) mutable.update {it.copy(printMessage="Página não enviada: ${e.message}")}
+            throw e
+        } finally {mutable.update {it.copy(testing=false,printingPage=false)}}
     }
     private suspend fun executeJob(suite:HardwareSuite,setup:PenSetup,pageNumber:Int?=null,totalPages:Int?=null) {
         val (g,c)=identifiedConnection()

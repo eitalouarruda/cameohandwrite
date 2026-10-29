@@ -33,4 +33,9 @@ class HardwareReportTest {
         assertTrue(report.stages.single().execution.contains("Interrompido"))
         assertEquals("Não avaliado",report.stages.single().observation)
     }
+    @Test fun pageReportKeepsSelectedPageMetadata() {
+        val report=HardwareTestReport("now","CAMEO 5 V1.04",Paper(),PenSetup(1,10),listOf(StageReport("Página 2 de 4","Texto do editor")),pageNumber=2,totalPages=4)
+        assertEquals(report,HardwareTestReport.decode(report.encode()))
+    }
+
 }

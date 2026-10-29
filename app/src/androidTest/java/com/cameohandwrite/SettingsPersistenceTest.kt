@@ -27,7 +27,7 @@ class SettingsPersistenceTest {
     }
     @Test fun exportsAndImportsCalibrationAndPreferences() = runBlocking {
         val repo=SettingsRepository(ApplicationProvider.getApplicationContext())
-        val s=Settings(text="Olá España",paper=Paper(offsetX=-0.1,offsetY=0.2),irregularity=72,preferredDevice="00:11:22:33:44:55",style=Style.CURSIVE)
+        val s=Settings(text="Olá España",paper=Paper(offsetX=-0.1,offsetY=0.2),irregularity=72,preferredDevice="00:11:22:33:44:55",style=Style.CURSIVE,penForce=2,penSpeed=10)
         assertEquals(s,repo.decode(repo.encode(s),commitProfiles=false))
     }
 }

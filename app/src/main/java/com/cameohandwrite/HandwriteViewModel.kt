@@ -85,7 +85,7 @@ class HandwriteViewModel(app:Application):AndroidViewModel(app) {
         try {
             require(!snapshot.busy && snapshot.error==null) {"Aguarde a prévia ficar pronta"}
             val page=snapshot.document.pages.getOrNull(index) ?: error("Página não encontrada")
-            val job=CameoPageJob.prepare(snapshot.settings.paper,page,index+1,snapshot.document.pages.size)
+            val job=PagePrintJob(snapshot.settings.paper,page,index+1,snapshot.document.pages.size)
             val setup=PenSetup(snapshot.settings.penForce,snapshot.settings.penSpeed)
             message("")
             printJob=viewModelScope.launch {

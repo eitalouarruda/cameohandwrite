@@ -3,6 +3,8 @@ package com.cameohandwrite.drivers.cameo
 import com.cameohandwrite.domain.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 /** Shared, validated 0.3.2 sender. Same 512-byte pen-up blocks and acknowledged 20-byte writes. */
 class PlotterNotReadyException(val status:Cameo5Driver.Status):IllegalStateException(
@@ -16,13 +18,15 @@ object CameoJobRunner {
         pollMillis:Long=50,timeoutMillis:Long=30000
     ):Boolean {
         require(Cameo5Driver.identifiesOriginalCameo5(model)) { "Identifique uma Cameo 5 original" }
-        paper.validate()
-        require(stages.isNotEmpty() && stages.all {it.speedOverride==null || it.speedOverride in 1..30})
-        require(stages.sumOf {it.page.strokes.sumOf {stroke->stroke.size.toLong()}}<=200000L) { "Página densa demais; aumente a letra ou divida o texto" }
-        stages.forEach {Cameo5Driver.encode(it.page,paper)}
-        val setupCommands=setup.commands().fold(byteArrayOf()) { a,b->a+b }
-        // Compile and validate all blocks before configuring or moving the machine.
-        val stageBlocks=stages.map { CameoStrokeBlocks.build(it.page,paper) }
+        val (setupCommands,stageBlocks)=withContext(Dispatchers.Default) {
+            paper.validate()
+            require(stages.isNotEmpty() && stages.all {it.speedOverride==null || it.speedOverride in 1..30})
+            require(stages.sumOf {it.page.strokes.sumOf {stroke->stroke.size.toLong()}}<=200000L) { "Página densa demais; aumente a letra ou divida o texto" }
+            stages.forEach {Cameo5Driver.encode(it.page,paper)}
+            val setupBytes=setup.commands().fold(byteArrayOf()) { a,b->a+b }
+            val blocks=stages.map { CameoStrokeBlocks.build(it.page,paper) }
+            setupBytes to blocks
+        }
         require(pollMillis>0 && timeoutMillis>0)
         suspend fun ready() { withTimeout(timeoutMillis) {
             while(true) when(link.status()) {

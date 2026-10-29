@@ -94,6 +94,6 @@ class EngineTest {
     }
     @Test(expected=IllegalArgumentException::class) fun rejectsInvalidMargins() { engine.layout(Settings(paper=Paper(left=200.0))) }
     @Test(expected=IllegalArgumentException::class) fun rejectsOversizedLetters() { engine.layout(Settings(letterHeight=10.0)) }
-    @Test(expected=IllegalArgumentException::class) fun rejectsUnsafeCalibration() { engine.layout(Settings(paper=Paper(offsetY=-20.0))) }
+    @Test(expected=IllegalArgumentException::class) fun rejectsUnsafeCalibration() { engine.layout(Settings(text="Teste de limites",paper=Paper(offsetY=-20.0))) }
     @Test fun allFiveStylesGenerateRealPaths() { for(style in Style.entries) assertTrue(engine.layout(Settings(text="Olá ação 123",style=style)).pages.first().strokes.isNotEmpty()) }
 }
