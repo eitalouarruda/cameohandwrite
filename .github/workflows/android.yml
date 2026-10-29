@@ -24,6 +24,13 @@ jobs:
         with:
           path: ~/.android/debug.keystore
           key: cameo-debug-signing-v1
+      - name: Preparar chave debug de teste
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+          fi
+          echo "CAMEO_DEBUG_KEYSTORE=$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
       - name: Testar e compilar APK
         run: ./gradlew testDebugUnitTest assembleDebug lintDebug --stacktrace
       - uses: actions/upload-artifact@v4
